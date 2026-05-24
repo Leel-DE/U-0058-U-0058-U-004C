@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Initial MVP scaffold \\(phases 0-12\\) *)"
+    ]
+  }
+}

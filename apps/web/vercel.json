@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @cr/web build",
+  "installCommand": "echo 'install handled by build'",
+  "functions": {
+    "src/app/api/inngest/route.ts": { "maxDuration": 60 }
+  }
+}
