@@ -483,16 +483,29 @@ async function processQueueItem(run: DiscoveryRunState, item: QueueItem) {
       url: item.url,
       container: shell.emptyContainerSelector,
     });
+    const cheerioLen = fetched.html.length;
     try {
-      const pw = await fetchHtmlBrowser(item.url, run.options.userAgent, 30_000);
+      const pw = await fetchHtmlBrowser(item.url, run.options.userAgent, 30_000, {
+        // Wait until the empty container actually has children populated by
+        // the site's JS (Tilda fires an XHR to /products after window.load).
+        waitForChildrenIn: shell.emptyContainerSelector,
+        waitForChildrenMs: 12_000,
+        // Tilda paginates by 'load more on scroll' — nudge it.
+        scrollToBottom: true,
+      });
       const cls2 = classifyResponse(pw.status, pw.html);
-      if (cls2.ok && pw.html.length > fetched.html.length / 2) {
+      const delta = pw.html.length - cheerioLen;
+      if (cls2.ok && pw.html.length > cheerioLen / 2) {
         fetched = pw;
-        log(run, 'info', `Playwright render succeeded (+${pw.html.length - fetched.html.length} chars)`, {
+        log(run, 'info', `Playwright render succeeded (+${delta} chars, ${pw.durationMs}ms)`, {
           url: item.url,
         });
       } else if (!cls2.ok) {
-        log(run, 'warn', `Playwright render returned ${cls2.code}; falling back to cheerio HTML`, {
+        log(run, 'warn', `Playwright render returned ${cls2.code}; keeping cheerio HTML`, {
+          url: item.url,
+        });
+      } else {
+        log(run, 'warn', `Playwright render returned same/smaller HTML (Δ ${delta} chars); keeping cheerio`, {
           url: item.url,
         });
       }
