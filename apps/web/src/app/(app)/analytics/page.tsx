@@ -6,7 +6,7 @@ import { MarketPositionChart } from './_components/market-position-chart';
 
 export const dynamic = 'force-dynamic';
 
-interface Row {
+interface Row extends Record<string, unknown> {
   my_id: string;
   my_name: string;
   my_price: string;

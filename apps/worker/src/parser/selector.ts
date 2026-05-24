@@ -1,6 +1,6 @@
 import type { CheerioAPI } from 'cheerio';
-import type { Extracted, ScrapingRules } from '../types';
-import { detectAvailability, detectCurrency, parsePrice } from '../util/normalize';
+import type { Extracted, ScrapingRules } from '../types.js';
+import { detectAvailability, detectCurrency, parsePrice } from '../util/normalize.js';
 
 export function parseSelectors($: CheerioAPI, rules: ScrapingRules): Extracted | null {
   const get = (sel: string | null | undefined) => {

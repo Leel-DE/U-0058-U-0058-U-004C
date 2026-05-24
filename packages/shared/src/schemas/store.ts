@@ -8,14 +8,23 @@ import {
 
 const domainRegex = /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
 
-export const createStoreSchema = z.object({
-  name: z.string().min(2).max(100),
-  domain: z
+/** Strip protocol/path and lowercase BEFORE validating the regex, so a paste
+ *  of `https://Shop.Example.com/x` resolves to `shop.example.com`. */
+const domainField = z.preprocess(
+  (v) =>
+    typeof v === 'string'
+      ? v.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim()
+      : v,
+  z
     .string()
     .min(3)
     .max(255)
-    .regex(domainRegex, 'Looks like an invalid domain (e.g. shop.example.com).')
-    .transform((v) => v.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')),
+    .regex(domainRegex, 'Looks like an invalid domain (e.g. shop.example.com).'),
+);
+
+export const createStoreSchema = z.object({
+  name: z.string().min(2).max(100),
+  domain: domainField,
   countryCode: z.string().length(2).toUpperCase(),
   currency: z.enum(SUPPORTED_CURRENCIES),
   crawlFrequencyMinutes: z

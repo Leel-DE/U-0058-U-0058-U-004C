@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { extract } from './cascade';
-import type { ScrapingRules } from '../types';
+import { extract } from './cascade.js';
+import type { ScrapingRules } from '../types.js';
 
 const DEFAULT_RULES: ScrapingRules = {
   useJsonLd: true,

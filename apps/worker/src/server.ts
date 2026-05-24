@@ -1,13 +1,13 @@
 import Fastify from 'fastify';
 import pino from 'pino';
 import { z } from 'zod';
-import { fetchHtml } from './fetcher/cheerio';
-import { fetchHtmlBrowser, closePlaywright } from './fetcher/playwright';
-import { extract } from './parser/cascade';
-import { classifyResponse } from './detect/block';
-import { checkRobots } from './robots/check';
-import { throttleByDomain } from './rate-limit';
-import type { ScrapingRules, ErrorCode } from './types';
+import { fetchHtml } from './fetcher/cheerio.js';
+import { fetchHtmlBrowser, closePlaywright } from './fetcher/playwright.js';
+import { extract } from './parser/cascade.js';
+import { classifyResponse } from './detect/block.js';
+import { checkRobots } from './robots/check.js';
+import { throttleByDomain } from './rate-limit.js';
+import type { ScrapingRules, ErrorCode } from './types.js';
 
 const logger = pino({ name: 'cr-worker', level: process.env.LOG_LEVEL ?? 'info' });
 const PORT = Number(process.env.PORT ?? 4000);

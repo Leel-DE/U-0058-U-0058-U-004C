@@ -10,6 +10,26 @@ create extension if not exists "pg_trgm";
 create extension if not exists "citext";
 
 -- =====================================================================
+-- Shim: provide a stub auth.uid() so RLS policies referencing it compile
+-- on bare Postgres (used by tests/CI). On real Supabase the auth schema
+-- and its functions already exist; we MUST NOT overwrite them.
+-- =====================================================================
+do $$
+begin
+  if not exists (select 1 from pg_namespace where nspname = 'auth') then
+    execute 'create schema auth';
+  end if;
+  if not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'auth' and p.proname = 'uid'
+  ) then
+    execute 'create function auth.uid() returns uuid language sql stable as $f$ select null::uuid $f$';
+  end if;
+end $$;
+
+-- =====================================================================
 -- Auto-create profile row when a new auth.users row appears
 -- =====================================================================
 create or replace function public.handle_new_user()
@@ -31,10 +51,18 @@ begin
 end;
 $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute function public.handle_new_user();
+-- Only attach the trigger when running against Supabase (auth.users exists).
+-- On a bare Postgres used for local tests there is no auth schema, so we skip.
+do $$
+begin
+  if exists (select 1 from information_schema.tables
+             where table_schema = 'auth' and table_name = 'users') then
+    execute 'drop trigger if exists on_auth_user_created on auth.users';
+    execute 'create trigger on_auth_user_created
+             after insert on auth.users
+             for each row execute function public.handle_new_user()';
+  end if;
+end $$;
 
 -- =====================================================================
 -- Updated-at triggers

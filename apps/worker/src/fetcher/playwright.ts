@@ -1,6 +1,6 @@
 import type { Browser, BrowserContext } from 'playwright';
 import { chromium } from 'playwright';
-import type { FetchResult } from '../types';
+import type { FetchResult } from '../types.js';
 
 let browser: Browser | null = null;
 let context: BrowserContext | null = null;

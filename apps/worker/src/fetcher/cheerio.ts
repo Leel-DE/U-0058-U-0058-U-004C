@@ -1,4 +1,4 @@
-import type { FetchResult } from '../types';
+import type { FetchResult } from '../types.js';
 
 export async function fetchHtml(
   url: string,

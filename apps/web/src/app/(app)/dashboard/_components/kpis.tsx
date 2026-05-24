@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { Card, CardContent } from '@/components/ui/card';
 import { db } from '@/lib/db';
 
-interface Row {
+interface Row extends Record<string, unknown> {
   monitored_products: number;
   active_stores: number;
   active_alerts: number;

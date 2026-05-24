@@ -1,6 +1,6 @@
 import type { CheerioAPI } from 'cheerio';
-import type { Extracted } from '../types';
-import { normalizeAvailability } from '../util/normalize';
+import type { Extracted } from '../types.js';
+import { normalizeAvailability } from '../util/normalize.js';
 
 interface JsonLdProduct {
   '@type'?: string | string[];

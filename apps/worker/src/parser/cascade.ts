@@ -1,8 +1,8 @@
 import * as cheerio from 'cheerio';
-import type { Extracted, ExtractedWithSource, ScrapingRules, SourcePath } from '../types';
-import { parseJsonLd } from './json-ld';
-import { parseOpenGraph } from './open-graph';
-import { parseSelectors } from './selector';
+import type { Extracted, ExtractedWithSource, ScrapingRules, SourcePath } from '../types.js';
+import { parseJsonLd } from './json-ld.js';
+import { parseOpenGraph } from './open-graph.js';
+import { parseSelectors } from './selector.js';
 
 function merge(base: Extracted, other: Extracted): Extracted {
   return {

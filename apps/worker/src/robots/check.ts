@@ -1,7 +1,16 @@
-import robotsParser from 'robots-parser';
+import robotsParserModule from 'robots-parser';
 import { LRUCache } from 'lru-cache';
 
-const cache = new LRUCache<string, { parser: ReturnType<typeof robotsParser>; status: string }>({
+// robots-parser ships a typings file with `declare module 'robots-parser';`
+// which shadows its real default-export. Re-narrow the type ourselves.
+interface Robot {
+  isAllowed(url: string, ua?: string): boolean | undefined;
+  isDisallowed(url: string, ua?: string): boolean | undefined;
+}
+type RobotsParserFn = (url: string, robotstxt: string) => Robot;
+const robotsParser = robotsParserModule as unknown as RobotsParserFn;
+
+const cache = new LRUCache<string, { parser: Robot; status: string }>({
   max: 500,
   ttl: 24 * 60 * 60 * 1000,
 });

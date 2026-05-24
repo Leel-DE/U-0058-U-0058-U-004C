@@ -1,4 +1,4 @@
-import type { Availability } from '../types';
+import type { Availability } from '../types.js';
 
 const PRICE_REGEX_DEFAULT = /(\d{1,3}(?:[\s.,]\d{3})*(?:[.,]\d{1,4})?)/;
 

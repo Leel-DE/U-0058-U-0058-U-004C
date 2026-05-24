@@ -1,6 +1,13 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { createClient } from '@supabase/supabase-js';
 import { publicEnv, serverEnv } from '../env';
+
+interface CookieToSet {
+  name: string;
+  value: string;
+  options?: CookieOptions;
+}
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
@@ -9,10 +16,10 @@ export async function createSupabaseServerClient() {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet: CookieToSet[]) {
         try {
           for (const { name, value, options } of cookiesToSet) {
-            cookieStore.set(name, value, options as CookieOptions);
+            cookieStore.set(name, value, options);
           }
         } catch {
           // Called from a Server Component — Next forbids cookie mutations there;
@@ -30,7 +37,6 @@ export async function createSupabaseServerClient() {
  */
 export function createSupabaseServiceRoleClient() {
   const env = serverEnv();
-  const { createClient } = require('@supabase/supabase-js') as typeof import('@supabase/supabase-js');
   return createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });

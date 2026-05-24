@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation';
 import { and, asc, eq } from 'drizzle-orm';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { ExternalLink } from 'lucide-react';
 import { db, schema } from '@/lib/db';
 import { getContext } from '@/lib/auth';

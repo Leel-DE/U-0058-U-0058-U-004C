@@ -1,4 +1,4 @@
-import type { ErrorCode } from '../types';
+import type { ErrorCode } from '../types.js';
 
 const CAPTCHA_HINTS = [
   /recaptcha/i,

@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { formatCurrency, formatPct } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/empty-state';
 
-interface Row {
+interface Row extends Record<string, unknown> {
   competitor_product_id: string;
   title: string | null;
   currency: string;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePrice, detectCurrency, detectAvailability, normalizeAvailability } from './normalize';
+import { parsePrice, detectCurrency, detectAvailability, normalizeAvailability } from './normalize.js';
 
 describe('parsePrice', () => {
   it('parses European format with comma decimal', () => {
