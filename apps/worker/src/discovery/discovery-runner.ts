@@ -1,6 +1,8 @@
 import * as cheerio from 'cheerio';
 import { randomUUID } from 'node:crypto';
 import { fetchHtml } from '../fetcher/cheerio.js';
+import { fetchHtmlBrowser } from '../fetcher/playwright.js';
+import { detectSpaShell } from './spa-shell-detector.js';
 import { classifyResponse, classifyResponseStrict } from '../detect/block.js';
 import { throttleByDomain } from '../rate-limit.js';
 import { cleanDom } from '../ai/cleaners/clean-dom.js';
@@ -470,6 +472,35 @@ async function processQueueItem(run: DiscoveryRunState, item: QueueItem) {
     recordPage(run, item, { status: 'error', pageType: cls.code === 'captcha' ? 'captcha' : 'unknown', httpStatus: fetched.status, error: cls.code });
     return;
   }
+
+  // SPA-shell escalation: if cheerio returned an empty Tilda/Shopify/InSales/
+  // Bitrix product-list container, the cards are populated by JS — refetch
+  // the page through Playwright so we actually see them. Same pause/throttle
+  // rules apply; we only do this once per page (no recursion).
+  const shell = detectSpaShell(fetched.html);
+  if (shell.likely) {
+    log(run, 'info', `SPA shell detected (${shell.reason}); retrying via Playwright`, {
+      url: item.url,
+      container: shell.emptyContainerSelector,
+    });
+    try {
+      const pw = await fetchHtmlBrowser(item.url, run.options.userAgent, 30_000);
+      const cls2 = classifyResponse(pw.status, pw.html);
+      if (cls2.ok && pw.html.length > fetched.html.length / 2) {
+        fetched = pw;
+        log(run, 'info', `Playwright render succeeded (+${pw.html.length - fetched.html.length} chars)`, {
+          url: item.url,
+        });
+      } else if (!cls2.ok) {
+        log(run, 'warn', `Playwright render returned ${cls2.code}; falling back to cheerio HTML`, {
+          url: item.url,
+        });
+      }
+    } catch (err) {
+      log(run, 'warn', `Playwright render failed: ${(err as Error).message}`, { url: item.url });
+    }
+  }
+
   await processHtml(run, item, fetched.html, fetched.status);
 }
 

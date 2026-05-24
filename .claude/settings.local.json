@@ -54,7 +54,8 @@
       "Bash(sed -i 's/Cheerio<Element>/Cheerio<Node>/g' apps/worker/src/discovery/field-extractor.ts)",
       "Bash(sed -i 's/Cheerio<Element>/Cheerio<Node>/g; s/import type { Element } from .domhandler.;/import type { AnyNode } from \"domhandler\";\\\\ntype Node = AnyNode;/' apps/worker/src/discovery/product-card-detector.ts)",
       "Bash(node debug-detector.mjs)",
-      "Bash(node debug-tilda.mjs)"
+      "Bash(node debug-tilda.mjs)",
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Discovery: Playwright fallback for SPA-shell pages \\(Tilda, Shopify, …\\) *)"
     ]
   }
 }
