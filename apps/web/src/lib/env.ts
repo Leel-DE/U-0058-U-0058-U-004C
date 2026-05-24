@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 const ServerEnv = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  LOCAL_DEV_MODE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
   DATABASE_URL: z.string().min(1),
   DIRECT_URL: z.string().optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
@@ -10,6 +14,7 @@ const ServerEnv = z.object({
   INNGEST_EVENT_KEY: z.string().min(1),
   INNGEST_SIGNING_KEY: z.string().min(1),
   WORKER_URL: z.string().url(),
+  WORKER_HOST: z.string().optional(),
   WORKER_SHARED_SECRET: z.string().min(8),
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM_EMAIL: z.string().optional(),

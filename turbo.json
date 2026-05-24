@@ -3,6 +3,7 @@
   "globalDependencies": [".env", ".env.local"],
   "globalEnv": [
     "NODE_ENV",
+    "LOCAL_DEV_MODE",
     "DATABASE_URL",
     "DIRECT_URL",
     "NEXT_PUBLIC_SUPABASE_URL",
@@ -11,7 +12,9 @@
     "INNGEST_EVENT_KEY",
     "INNGEST_SIGNING_KEY",
     "WORKER_URL",
+    "WORKER_HOST",
     "WORKER_SHARED_SECRET",
+    "WORKER_BROWSER_MAX_PAGES",
     "RESEND_API_KEY",
     "RESEND_FROM_EMAIL",
     "SENTRY_DSN",

@@ -4,12 +4,21 @@ import type { FetchResult } from '../types.js';
 
 let browser: Browser | null = null;
 let context: BrowserContext | null = null;
+let openPages = 0;
+
+const MAX_PAGES = Math.max(1, Number(process.env.WORKER_BROWSER_MAX_PAGES ?? 2));
 
 async function getContext(userAgent: string): Promise<BrowserContext> {
   if (!browser) {
     browser = await chromium.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
+      args: [
+        '--no-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-background-networking',
+      ],
     });
   }
   if (!context) {
@@ -35,6 +44,10 @@ export async function fetchHtmlBrowser(
 ): Promise<FetchResult> {
   const t0 = Date.now();
   const ctx = await getContext(userAgent);
+  while (openPages >= MAX_PAGES) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  openPages += 1;
   const page = await ctx.newPage();
   try {
     const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
@@ -53,6 +66,7 @@ export async function fetchHtmlBrowser(
     };
   } finally {
     await page.close().catch(() => null);
+    openPages = Math.max(0, openPages - 1);
   }
 }
 

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { FormError } from '@/components/form-message';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { publicEnv } from '@/lib/env';
+import { authErrorMessage } from '@/lib/auth-error';
 
 const schema = z.object({
   fullName: z.string().min(2).max(100),
@@ -31,26 +32,30 @@ export function SignupForm() {
 
   function onSubmit(values: FormValues) {
     startTransition(async () => {
-      const supabase = createSupabaseBrowserClient();
-      const { error, data } = await supabase.auth.signUp({
-        email: values.email,
-        password: values.password,
-        options: {
-          data: { full_name: values.fullName },
-          emailRedirectTo: `${publicEnv.NEXT_PUBLIC_APP_URL}/onboarding`,
-        },
-      });
-      if (error) {
-        form.setError('root', { message: error.message });
-        return;
-      }
-      if (data.session) {
-        // Email confirmation disabled — go straight to onboarding.
-        toast.success('Account created');
-        router.replace('/onboarding');
-        router.refresh();
-      } else {
-        toast.success('Check your email to confirm your account.');
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { error, data } = await supabase.auth.signUp({
+          email: values.email,
+          password: values.password,
+          options: {
+            data: { full_name: values.fullName },
+            emailRedirectTo: `${publicEnv.NEXT_PUBLIC_APP_URL}/onboarding`,
+          },
+        });
+        if (error) {
+          form.setError('root', { message: error.message });
+          return;
+        }
+        if (data.session) {
+          // Email confirmation disabled - go straight to onboarding.
+          toast.success('Account created');
+          router.replace('/onboarding');
+          router.refresh();
+        } else {
+          toast.success('Check your email to confirm your account.');
+        }
+      } catch (error) {
+        form.setError('root', { message: authErrorMessage(error) });
       }
     });
   }
@@ -74,7 +79,7 @@ export function SignupForm() {
       </div>
       <FormError message={form.formState.errors.root?.message} />
       <Button type="submit" className="w-full" disabled={pending}>
-        {pending ? 'Creating account…' : 'Create account'}
+        {pending ? 'Creating account...' : 'Create account'}
       </Button>
     </form>
   );

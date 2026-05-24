@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { FormError } from '@/components/form-message';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { authErrorMessage } from '@/lib/auth-error';
 
 const schema = z.object({
   email: z.string().email(),
@@ -34,15 +35,19 @@ export function LoginForm({
 
   function onSubmit(values: FormValues) {
     startTransition(async () => {
-      const supabase = createSupabaseBrowserClient();
-      const { error } = await supabase.auth.signInWithPassword(values);
-      if (error) {
-        form.setError('root', { message: error.message });
-        return;
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { error } = await supabase.auth.signInWithPassword(values);
+        if (error) {
+          form.setError('root', { message: error.message });
+          return;
+        }
+        toast.success('Signed in');
+        router.replace(params.next ?? '/dashboard');
+        router.refresh();
+      } catch (error) {
+        form.setError('root', { message: authErrorMessage(error) });
       }
-      toast.success('Signed in');
-      router.replace(params.next ?? '/dashboard');
-      router.refresh();
     });
   }
 

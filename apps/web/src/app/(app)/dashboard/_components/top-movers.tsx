@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { sql } from 'drizzle-orm';
+import { unstable_cache } from 'next/cache';
 import { db } from '@/lib/db';
 import { formatCurrency, formatPct } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -13,17 +14,25 @@ interface Row extends Record<string, unknown> {
   pct_change: string;
 }
 
+const getTopMovers = unstable_cache(
+  async (orgId: string, direction: 'up' | 'down') => {
+    const orderClause = direction === 'down' ? sql`pct_change asc nulls last` : sql`pct_change desc nulls last`;
+    return db().execute<Row>(sql`
+      select competitor_product_id, title, currency, last_price, old_price, pct_change
+      from v_price_movers
+      where org_id = ${orgId}
+        and pct_change is not null
+        and ${direction === 'down' ? sql`pct_change < 0` : sql`pct_change > 0`}
+      order by ${orderClause}
+      limit 5
+    `);
+  },
+  ['dashboard-top-movers'],
+  { revalidate: 15 },
+);
+
 export async function TopMovers({ orgId, direction }: { orgId: string; direction: 'up' | 'down' }) {
-  const orderClause = direction === 'down' ? sql`pct_change asc nulls last` : sql`pct_change desc nulls last`;
-  const rows = await db().execute<Row>(sql`
-    select competitor_product_id, title, currency, last_price, old_price, pct_change
-    from v_price_movers
-    where org_id = ${orgId}
-      and pct_change is not null
-      and ${direction === 'down' ? sql`pct_change < 0` : sql`pct_change > 0`}
-    order by ${orderClause}
-    limit 5
-  `);
+  const rows = await getTopMovers(orgId, direction);
 
   if (rows.length === 0) {
     return <EmptyState title="No movement yet" description="Once snapshots accumulate this will populate." />;

@@ -158,7 +158,7 @@ async function main() {
         id: STORE_A_ID,
         orgId: ORG_ID,
         name: 'Example Electronics',
-        domain: 'example-electronics.test',
+        domain: 'example-electronics.local',
         countryCode: 'DE',
         currency: 'EUR',
         crawlFrequencyMinutes: 1440,
@@ -168,7 +168,7 @@ async function main() {
         id: STORE_B_ID,
         orgId: ORG_ID,
         name: 'Acme Audio',
-        domain: 'acme-audio.test',
+        domain: 'acme-audio.local',
         countryCode: 'GB',
         currency: 'GBP',
         crawlFrequencyMinutes: 720,
@@ -216,8 +216,8 @@ async function main() {
     })
     .onConflictDoNothing();
 
-  const urlA = 'https://example-electronics.test/headphones/acme-hp-2000';
-  const urlB = 'https://acme-audio.test/products/hp-2000';
+  const urlA = 'http://127.0.0.1:4000/fixtures/example-electronics/acme-hp-2000';
+  const urlB = 'http://127.0.0.1:4000/fixtures/acme-audio/hp-2000';
   await db
     .insert(competitorProducts)
     .values([
