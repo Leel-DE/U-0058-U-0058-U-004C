@@ -15,6 +15,33 @@ function urlHash(url: string) {
   return createHash('sha256').update(url.trim().toLowerCase()).digest('hex');
 }
 
+function toIsoString(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  }
+  return null;
+}
+
+function serializeRunStatus(value: WorkerJson | null | undefined) {
+  if (!value) return null;
+  return {
+    ...value,
+    startedAt: toIsoString(value.startedAt),
+    finishedAt: toIsoString(value.finishedAt),
+  };
+}
+
+function serializeLog(log: Record<string, unknown>) {
+  return {
+    ...log,
+    createdAt: toIsoString(log.createdAt) ?? '',
+  };
+}
+
 async function workerFetch(path: string, init?: RequestInit) {
   const env = serverEnv();
   const res = await fetch(`${env.WORKER_URL}${path}`, {
@@ -129,6 +156,7 @@ export const startSiteDiscovery = defineAction(
 );
 
 async function updateRunStatusFromWorker(runId: string, status: WorkerJson) {
+  const finishedAt = toIsoString(status.finishedAt);
   await db()
     .update(schema.siteDiscoveryRuns)
     .set({
@@ -138,7 +166,7 @@ async function updateRunStatusFromWorker(runId: string, status: WorkerJson) {
       categoriesFound: Number(status.categoriesFound ?? 0),
       productsFound: Number(status.productsFound ?? 0),
       errorsCount: Number(status.errorsCount ?? 0),
-      finishedAt: status.finishedAt ? new Date(String(status.finishedAt)) : undefined,
+      ...(finishedAt ? { finishedAt: new Date(finishedAt) } : {}),
     })
     .where(eq(schema.siteDiscoveryRuns.id, runId));
 }
@@ -259,14 +287,14 @@ export const getSiteDiscoveryStatus = defineAction(
       if (terminalStatuses.has(String(status.status))) {
         await persistWorkerReport(input.runId, input.storeId);
       }
-      return status;
+      return serializeRunStatus(status);
     }
     const row = await db()
       .select()
       .from(schema.siteDiscoveryRuns)
       .where(and(eq(schema.siteDiscoveryRuns.id, input.runId), eq(schema.siteDiscoveryRuns.competitorId, input.storeId)))
       .limit(1);
-    return row[0] ?? null;
+    return serializeRunStatus((row[0] ?? null) as WorkerJson | null);
   },
   { roles: ['owner', 'manager', 'viewer'] },
 );
@@ -281,7 +309,7 @@ function discoveryControl(path: string) {
         body: JSON.stringify({ runId: input.runId }),
       });
       if (json.ok && json.status) await updateRunStatusFromWorker(input.runId, json.status as WorkerJson);
-      return json.status ?? null;
+      return serializeRunStatus((json.status ?? null) as WorkerJson | null);
     },
     { roles: ['owner', 'manager'] },
   );
@@ -296,7 +324,7 @@ export const getSiteDiscoveryLogs = defineAction(
   async (input, ctx) => {
     await ensureStore(input.storeId, ctx.orgId);
     const json = await workerFetch(`/discovery/${input.runId}/logs`);
-    return (json.logs ?? []) as Array<Record<string, unknown>>;
+    return ((json.logs ?? []) as Array<Record<string, unknown>>).map(serializeLog);
   },
   { roles: ['owner', 'manager', 'viewer'] },
 );

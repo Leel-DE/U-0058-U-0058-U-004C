@@ -18,6 +18,9 @@ const KINDS = [
   { key: 'products_csv', label: 'My products · CSV' },
   { key: 'matches_csv', label: 'Matches · CSV' },
   { key: 'analytics_xlsx', label: 'Analytics workbook · XLSX' },
+  { key: 'product_intelligence_csv', label: 'Product intelligence - CSV' },
+  { key: 'product_intelligence_json', label: 'Product intelligence - JSON' },
+  { key: 'product_history_csv', label: 'Product history - CSV' },
 ] as const;
 
 export function NewExportButtons() {

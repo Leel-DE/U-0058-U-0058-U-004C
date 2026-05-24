@@ -70,14 +70,33 @@ export default async function DiscoveryReportPage({
             storeId={store.id}
             runId={runId}
             products={report.products.map((p) => ({
-              ...p,
+              id: p.id,
+              url: p.url,
+              title: p.title,
               price: p.price == null ? null : String(p.price),
               oldPrice: p.oldPrice == null ? null : String(p.oldPrice),
+              currency: p.currency,
+              availability: p.availability,
+              imageUrl: p.imageUrl,
+              brand: p.brand,
+              sku: p.sku,
+              ean: p.ean,
+              gtin: p.gtin,
               rating: p.rating == null ? null : String(p.rating),
+              shipping: p.shipping,
+              categoryPath: p.categoryPath,
               confidence: p.confidence == null ? null : String(p.confidence),
+              source: p.source,
+              rawCardJson: p.rawCardJson,
+              rawDetailJson: p.rawDetailJson,
             }))}
             categories={report.categories.map((c) => ({
-              ...c,
+              id: c.id,
+              url: c.url,
+              name: c.name,
+              path: c.path,
+              productsFound: c.productsFound,
+              breadcrumbs: c.breadcrumbs,
               confidence: c.confidence == null ? null : String(c.confidence),
             }))}
           />
@@ -95,4 +114,3 @@ function Metric({ label, value }: { label: string; value: React.ReactNode }) {
     </div>
   );
 }
-

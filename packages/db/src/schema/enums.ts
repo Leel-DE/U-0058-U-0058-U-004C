@@ -60,6 +60,9 @@ export const exportKindEnum = pgEnum('export_kind', [
   'products_csv',
   'matches_csv',
   'analytics_xlsx',
+  'product_intelligence_csv',
+  'product_intelligence_json',
+  'product_history_csv',
 ]);
 export const exportStatusEnum = pgEnum('export_status', [
   'queued',

@@ -40,6 +40,7 @@ export const myProducts = pgTable(
     orgSkuUnique: uniqueIndex('my_products_org_sku_unique').on(t.orgId, t.sku),
     orgActiveIdx: index('my_products_org_active_idx').on(t.orgId, t.active),
     orgGtinIdx: index('my_products_org_gtin_idx').on(t.orgId, t.gtin),
+    orgCategoryIdx: index('my_products_org_category_idx').on(t.orgId, t.categoryId),
   }),
 );
 
@@ -76,6 +77,8 @@ export const competitorProducts = pgTable(
     storeUrlUnique: uniqueIndex('competitor_products_store_url_unique').on(t.storeId, t.urlHash),
     nextRunIdx: index('competitor_products_next_run_idx').on(t.nextRunAt),
     orgStoreIdx: index('competitor_products_org_store_idx').on(t.orgId, t.storeId),
+    orgActiveIdx: index('competitor_products_org_active_idx').on(t.orgId, t.active),
+    orgLastScrapedIdx: index('competitor_products_org_last_scraped_idx').on(t.orgId, t.lastScrapedAt),
   }),
 );
 

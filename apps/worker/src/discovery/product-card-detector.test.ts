@@ -378,4 +378,70 @@ describe('detectProductCards', () => {
     expect(r.cards).toEqual([]);
     expect(r.confidence).toBe(0);
   });
+
+  it('detects Tilda t-store__card markup and reads data-product-url / data-product-img directly', () => {
+    // Verbatim DOM shape from olinbar.tools (Tilda store).
+    const html = `
+      <div class="t-store__card-list">
+        <div class="js-product t-store__card t-store__stretch-col t-store__stretch-col_25 t-align_center t-item"
+             data-product-inv data-product-lid="797184" data-product-uid="797184"
+             data-product-gen-uid="904781" data-product-pack-label="1wh"
+             data-product-url="https://olinbar.tools/barnyy-inventar/boston-sheykery/tproduct/12345-sheiker-boston-750550-ml"
+             data-product-part-uid="748936807831" data-card-size="small"
+             data-product-img="https://static.tildacdn.one/tild3439-3165-4031/shaker_boston_750-55.jpg">
+          <div class="t-store__card__wrap_all"><img src="https://static.tildacdn.one/tild3439-3165-4031/shaker_boston_750-55.jpg" /></div>
+          <div class="t-store__card_wrap_txt-and-btns">
+            <a href="https://olinbar.tools/barnyy-inventar/boston-sheykery/tproduct/12345-sheiker-boston-750550-ml"
+               class="t-store__card_textwrapper">
+              <div class="t-store__card__title">Шейкер Бостон 750+550 мл</div>
+            </a>
+            <div class="t-store__card__price-wrapper">
+              <div class="t-store__card__price">699 ₽</div>
+              <div class="t-store__card__price t-store__card__price_old">795 ₽</div>
+            </div>
+          </div>
+        </div>
+        <div class="js-product t-store__card t-store__stretch-col t-store__stretch-col_25"
+             data-product-lid="528426" data-product-uid="528426"
+             data-product-url="https://olinbar.tools/barnyy-inventar/boston-sheykery/tproduct/67890-boston-sheiker-cherep-850-ml-550-ml"
+             data-product-img="https://static.tildacdn.one/stor6565-6638/sheiker.jpg">
+          <div class="t-store__card__wrap_all"><img src="https://static.tildacdn.one/stor6565-6638/sheiker.jpg" /></div>
+          <div class="t-store__card_wrap_txt-and-btns">
+            <a href="https://olinbar.tools/barnyy-inventar/boston-sheykery/tproduct/67890-boston-sheiker-cherep-850-ml-550-ml"
+               class="t-store__card_textwrapper">
+              <div class="t-store__card__title">Бостон шейкер "Череп" 850 мл + 550 мл</div>
+            </a>
+            <div class="t-store__card__price-wrapper">
+              <div class="t-store__card__price">999 ₽</div>
+            </div>
+          </div>
+        </div>
+        <div class="js-product t-store__card t-store__stretch-col t-store__stretch-col_25"
+             data-product-lid="753201" data-product-uid="753201"
+             data-product-url="https://olinbar.tools/barnyy-inventar/boston-sheykery/tproduct/11111-sheiker-boston-750550-ml-tiki"
+             data-product-img="https://static.tildacdn.one/tild6664/shaker_boston_750-55.jpg">
+          <div class="t-store__card__wrap_all"><img src="/img/tiki.jpg" /></div>
+          <div class="t-store__card_wrap_txt-and-btns">
+            <a href="https://olinbar.tools/barnyy-inventar/boston-sheykery/tproduct/11111-sheiker-boston-750550-ml-tiki"
+               class="t-store__card_textwrapper">
+              <div class="t-store__card__title">Шейкер Бостон 750+550 мл Тики</div>
+            </a>
+            <div class="t-store__card__price-wrapper">
+              <div class="t-store__card__price">999 ₽</div>
+              <div class="t-store__card__price t-store__card__price_old">1 295 ₽</div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    const r = detectProductCards(html, { pageUrl: 'https://olinbar.tools/barnyy-inventar' });
+    expect(r.cards.length).toBeGreaterThanOrEqual(3);
+    const cherep = r.cards.find((c) => c.title?.includes('Череп'));
+    expect(cherep).toBeTruthy();
+    expect(cherep?.productUrl).toContain('boston-sheiker-cherep');
+    expect(cherep?.imageUrl).toContain('static.tildacdn.one');
+    expect(cherep?.price).toBe(999);
+    const tiki = r.cards.find((c) => c.title?.includes('Тики'));
+    expect(tiki?.price).toBe(999);
+    expect(tiki?.oldPrice).toBe(1295);
+  });
 });

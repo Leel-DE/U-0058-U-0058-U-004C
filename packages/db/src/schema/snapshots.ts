@@ -39,6 +39,7 @@ export const scrapeRuns = pgTable(
   },
   (t) => ({
     orgCreatedIdx: index('scrape_runs_org_created_idx').on(t.orgId, t.createdAt),
+    orgStatusCreatedIdx: index('scrape_runs_org_status_created_idx').on(t.orgId, t.status, t.createdAt),
     storeCreatedIdx: index('scrape_runs_store_created_idx').on(t.storeId, t.createdAt),
   }),
 );
@@ -76,6 +77,7 @@ export const priceSnapshots = pgTable(
   (t) => ({
     productTimeIdx: index('price_snapshots_product_time_idx').on(t.competitorProductId, t.scrapedAt),
     orgTimeIdx: index('price_snapshots_org_time_idx').on(t.orgId, t.scrapedAt),
+    orgStatusTimeIdx: index('price_snapshots_org_status_time_idx').on(t.orgId, t.status, t.scrapedAt),
     runIdx: index('price_snapshots_run_idx').on(t.scrapeRunId),
   }),
 );

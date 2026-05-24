@@ -34,6 +34,7 @@ export const productMatches = pgTable(
   (t) => ({
     uniqPair: uniqueIndex('product_matches_pair_unique').on(t.myProductId, t.competitorProductId),
     orgStatusIdx: index('product_matches_org_status_idx').on(t.orgId, t.status),
+    competitorProductIdx: index('product_matches_competitor_product_idx').on(t.competitorProductId),
   }),
 );
 

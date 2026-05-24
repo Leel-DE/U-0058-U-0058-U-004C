@@ -3,6 +3,15 @@ import { profiles } from './profiles';
 import { organizations, memberships, invitations } from './organizations';
 import { stores, scrapingRules } from './stores';
 import { myProducts, competitorProducts } from './products';
+import {
+  normalizedProductAliases,
+  normalizedProducts,
+  productAvailabilityHistory,
+  productInsightsCache,
+  productMatchingLogs,
+  productPriceHistory,
+  productSpecifications,
+} from './product-intelligence';
 import { categories, tags } from './taxonomy';
 import { priceSnapshots, scrapeRuns } from './snapshots';
 import { productMatches } from './matches';
@@ -27,6 +36,8 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   competitorProducts: many(competitorProducts),
   categories: many(categories),
   tags: many(tags),
+  normalizedProducts: many(normalizedProducts),
+  productInsights: many(productInsightsCache),
 }));
 
 export const membershipsRelations = relations(memberships, ({ one }) => ({
@@ -128,6 +139,68 @@ export const myProductsRelations = relations(myProducts, ({ one, many }) => ({
   }),
   category: one(categories, { fields: [myProducts.categoryId], references: [categories.id] }),
   matches: many(productMatches),
+}));
+
+export const normalizedProductsRelations = relations(normalizedProducts, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [normalizedProducts.orgId],
+    references: [organizations.id],
+  }),
+  category: one(categories, {
+    fields: [normalizedProducts.categoryId],
+    references: [categories.id],
+  }),
+  aliases: many(normalizedProductAliases),
+  specifications: one(productSpecifications, {
+    fields: [normalizedProducts.id],
+    references: [productSpecifications.normalizedProductId],
+  }),
+  priceHistory: many(productPriceHistory),
+  availabilityHistory: many(productAvailabilityHistory),
+  matchingLogs: many(productMatchingLogs),
+}));
+
+export const normalizedProductAliasesRelations = relations(normalizedProductAliases, ({ one }) => ({
+  product: one(normalizedProducts, {
+    fields: [normalizedProductAliases.normalizedProductId],
+    references: [normalizedProducts.id],
+  }),
+}));
+
+export const productSpecificationsRelations = relations(productSpecifications, ({ one }) => ({
+  product: one(normalizedProducts, {
+    fields: [productSpecifications.normalizedProductId],
+    references: [normalizedProducts.id],
+  }),
+}));
+
+export const productPriceHistoryRelations = relations(productPriceHistory, ({ one }) => ({
+  product: one(normalizedProducts, {
+    fields: [productPriceHistory.normalizedProductId],
+    references: [normalizedProducts.id],
+  }),
+}));
+
+export const productAvailabilityHistoryRelations = relations(productAvailabilityHistory, ({ one }) => ({
+  product: one(normalizedProducts, {
+    fields: [productAvailabilityHistory.normalizedProductId],
+    references: [normalizedProducts.id],
+  }),
+}));
+
+export const productMatchingLogsRelations = relations(productMatchingLogs, ({ one }) => ({
+  product: one(normalizedProducts, {
+    fields: [productMatchingLogs.normalizedProductId],
+    references: [normalizedProducts.id],
+  }),
+  myProduct: one(myProducts, {
+    fields: [productMatchingLogs.myProductId],
+    references: [myProducts.id],
+  }),
+  competitorProduct: one(competitorProducts, {
+    fields: [productMatchingLogs.competitorProductId],
+    references: [competitorProducts.id],
+  }),
 }));
 
 export const priceSnapshotsRelations = relations(priceSnapshots, ({ one }) => ({

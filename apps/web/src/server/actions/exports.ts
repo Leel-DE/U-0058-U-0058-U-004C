@@ -8,7 +8,15 @@ import { defineAction } from '@/lib/action';
 import { buildExport, type ExportKind } from '@/server/exports/build';
 
 const createExportSchema = z.object({
-  kind: z.enum(['snapshots_csv', 'products_csv', 'matches_csv', 'analytics_xlsx']),
+  kind: z.enum([
+    'snapshots_csv',
+    'products_csv',
+    'matches_csv',
+    'analytics_xlsx',
+    'product_intelligence_csv',
+    'product_intelligence_json',
+    'product_history_csv',
+  ]),
   params: z.record(z.unknown()).default({}),
 });
 

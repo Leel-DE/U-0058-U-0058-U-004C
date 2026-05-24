@@ -46,6 +46,7 @@ export const siteDiscoveryRuns = pgTable(
   },
   (t) => ({
     orgCreatedIdx: index('site_discovery_runs_org_created_idx').on(t.orgId, t.startedAt),
+    orgStatusCreatedIdx: index('site_discovery_runs_org_status_created_idx').on(t.orgId, t.status, t.startedAt),
     competitorIdx: index('site_discovery_runs_competitor_idx').on(t.competitorId),
   }),
 );

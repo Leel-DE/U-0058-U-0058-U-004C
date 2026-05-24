@@ -41,6 +41,7 @@ export const manualScrapingSessions = pgTable(
   (t) => ({
     orgIdx: index('manual_scraping_sessions_org_idx').on(t.orgId),
     statusIdx: index('manual_scraping_sessions_status_idx').on(t.status),
+    orgStatusCreatedIdx: index('manual_scraping_sessions_org_status_created_idx').on(t.orgId, t.status, t.createdAt),
   }),
 );
 
@@ -81,4 +82,3 @@ export type AiExtractionSuggestion = typeof aiExtractionSuggestions.$inferSelect
 export type ManualScrapingSession = typeof manualScrapingSessions.$inferSelect;
 export type DomainSession = typeof domainSessions.$inferSelect;
 export type AiLog = typeof aiLogs.$inferSelect;
-

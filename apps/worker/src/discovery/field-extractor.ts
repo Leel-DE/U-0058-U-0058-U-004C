@@ -33,11 +33,19 @@ export interface ExtractedCard {
 
 const MAX_PRICE = 100_000;
 
-const SINGLE_PRICE_SHAPE =
-  /^\s*(?:€|EUR|\$|USD|£|GBP)?\s*(?:\d{1,3}(?:[.,\s]\d{3})*(?:[,.]\d{1,2}|,-)?|\d{1,6}[,.]\d{1,2}|\d{1,6})\s*(?:€|EUR|\$|USD|£|GBP)?\s*$/i;
+/** Recognised currency tokens — both major-Latin and CIS symbols. */
+const CURRENCY_TOKEN =
+  '€|EUR|\\$|USD|£|GBP|₽|RUB|руб\\.?|р\\.|₴|UAH|грн\\.?|₸|тг|KZT|zł|PLN|Kč|CZK|CHF|Fr\\.';
 
+const SINGLE_PRICE_SHAPE = new RegExp(
+  `^\\s*(?:${CURRENCY_TOKEN})?\\s*(?:\\d{1,3}(?:[.,\\s]\\d{3})*(?:[,.]\\d{1,2}|,-)?|\\d{1,6}[,.]\\d{1,2}|\\d{1,6})\\s*(?:${CURRENCY_TOKEN})?\\s*$`,
+  'i',
+);
+
+// Anchored price regex: one currency-flanked numeric token. Currency set must
+// stay in sync with CURRENCY_TOKEN above (RUB, UAH, KZT, PLN, CZK, CHF…).
 const PRICE_ANCHORED_RE =
-  /(?:€|EUR|\$|USD|£|GBP)\s*([0-9]{1,5}(?:[.  ]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)|([0-9]{1,5}(?:[.  ]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)\s*(?:€|EUR|\$|USD|£|GBP)/i;
+  /(?:€|EUR|\$|USD|£|GBP|₽|RUB|руб\.?|р\.|₴|UAH|грн\.?|₸|тг|KZT|zł|PLN|Kč|CZK|CHF|Fr\.)\s*([0-9]{1,5}(?:[.  ]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)|([0-9]{1,5}(?:[.  ]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)\s*(?:€|EUR|\$|USD|£|GBP|₽|RUB|руб\.?|р\.|₴|UAH|грн\.?|₸|тг|KZT|zł|PLN|Kč|CZK|CHF|Fr\.)/i;
 
 const PRICE_ANCHORED_RE_GLOBAL = new RegExp(PRICE_ANCHORED_RE.source, 'gi');
 
@@ -111,8 +119,16 @@ function resolveAbsolute(raw: string | undefined, baseUrl: string): string | und
 }
 
 function pickProductLink($: CheerioAPI, card: Cheerio<DomNode>): string | undefined {
-  // Card itself may BE the link (e.g. WooCommerce LoopProduct-link).
+  // Card itself may BE the link (e.g. WooCommerce LoopProduct-link), or carry
+  // a direct product URL in a data-* attribute (Tilda, InSales, …). These
+  // attribute-level URLs are the most reliable signal — try them first.
   const candidates: string[] = [];
+  const attrUrl =
+    card.attr('data-product-url') ??
+    card.attr('data-product-link') ??
+    card.attr('data-product-href') ??
+    card.attr('data-href');
+  if (attrUrl) candidates.push(attrUrl);
   const selfHref = card.attr('href');
   if (selfHref) candidates.push(selfHref);
   for (const a of card.find('a[href]').toArray()) {
@@ -245,7 +261,16 @@ export function extractFields(
   if (!priceText) {
     const fallback = card
       .find('[data-testid*="price" i], [data-test*="price" i], [class*="price" i], [class*="preis" i]')
-      .not('[class*="--old" i], [class*="-old" i], [class*="was" i], [class*="rrp" i], [class*="uvp" i]')
+      .not(
+        '[class*="--old" i], [class*="-old" i], [class*="_old" i], [class*="was" i], ' +
+          '[class*="rrp" i], [class*="uvp" i], [class*="price_list" i], ' +
+          // Exclude price WRAPPERS — they contain multiple <span>s and parse as
+          // "699 ₽ 795 ₽" which fails the single-price shape guard. We want the
+          // leaf element holding ONE current price.
+          '[class*="price-wrapper" i], [class*="price_wrapper" i], ' +
+          '[class*="price-wrap" i], [class*="price_wrap" i], ' +
+          '[class*="prices" i]',
+      )
       .first();
     if (fallback.length) {
       const t = txt(fallback);
@@ -263,12 +288,15 @@ export function extractFields(
     sources.push('price:cardText_anchored');
   }
 
-  // Old price
+  // Old price — covers `price--old` (dash), `price_old` (underscore, Tilda),
+  // `old-price` (Magento), `was-price`, `price_list`, RRP / UVP markers.
   const oldSelectors = [
     '[class*="price--old" i]',
+    '[class*="price_old" i]',
     '[class*="old-price" i]',
     '[class*="price--was" i]',
     '[class*="was-price" i]',
+    '[class*="price_list" i]',
     '[class*="rrp" i]',
     '[class*="uvp" i]',
     'del[class*="price" i]',
@@ -306,8 +334,17 @@ export function extractFields(
   if (productUrl) sources.push('url:product_link');
 
   // --- image ----------------------------------------------------------------
-  const imageUrl = resolveAbsolute(pickImageAttr(card.find('img').first()), opts.baseUrl);
-  if (imageUrl) sources.push('image:img_tag');
+  // Tilda exposes the canonical product image directly on the card via
+  // `data-product-img`. Some other CMSes use `data-image-src`. Use those
+  // first; fall back to the standard <img> attribute probe.
+  const cardImgAttr =
+    card.attr('data-product-img') ??
+    card.attr('data-image-src') ??
+    card.attr('data-img');
+  const imageUrl =
+    resolveAbsolute(cardImgAttr, opts.baseUrl) ??
+    resolveAbsolute(pickImageAttr(card.find('img').first()), opts.baseUrl);
+  if (imageUrl) sources.push(cardImgAttr ? 'image:card_data_attr' : 'image:img_tag');
 
   // --- availability / brand / rating / discount -----------------------------
   const availabilityFromText = detectAvailability(cardText) ?? 'unknown';

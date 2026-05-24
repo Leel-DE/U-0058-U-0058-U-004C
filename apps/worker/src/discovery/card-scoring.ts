@@ -21,9 +21,10 @@ export interface ScoreBreakdown {
 
 /** Regexes for visible-price detection inside a candidate element.
  *  IMPORTANT: `\b` won't match between two non-word chars (e.g. space and
- *  `$`/`€`/`£`), so currency-prefixed forms drop `\b` before the symbol. */
+ *  `$`/`€`/`£`/`₽`), so currency-prefixed forms drop `\b` before the symbol. */
 const PRICE_PATTERNS: RegExp[] = [
-  /\b\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\s?(?:€|EUR)\b/i,
+  // EUR / USD / GBP — value first
+  /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:€|EUR)\b/i,
   /(?:€|EUR)\s?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\b/i,
   /\b(?:ab|from)\s+\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\s?(?:€|EUR)\b/i,
   /\bUVP\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?\s?(?:€|EUR)\b/i,
@@ -31,6 +32,15 @@ const PRICE_PATTERNS: RegExp[] = [
   /£\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?/,
   /\b\d{1,3}(?:,\d{3})*\.\d{2}\s?(?:USD|GBP)\b/i,
   /\b\d{1,3}(?:[.,]\d{3})*\s?(?:€|EUR|\$|USD|£|GBP)\b/i,
+  // RUB / UAH / KZT / PLN / CZK / CHF — used heavily by CIS / EU stores.
+  // Trailing `\b` is dropped because the symbol is non-word and `\b` won't
+  // match between two non-word chars (₽ + end-of-string).
+  /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:₽|RUB|руб\.?|р\.)/i,
+  /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:грн\.?|₴|UAH)/i,
+  /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:₸|тг|KZT)/i,
+  /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:zł|PLN)/i,
+  /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:Kč|CZK)/i,
+  /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:CHF|Fr\.)/i,
 ];
 
 /** Class/id/attr tokens that strongly hint "product card" in EN/DE shops. */
@@ -75,6 +85,22 @@ export const PRODUCT_CLASS_HINTS: ReadonlyArray<string> = [
   'produkt-card',
   'produktliste',
   'kachel',
+  // Tilda (popular Russian/CIS site builder — olinbar.tools, etc.)
+  // The list-item wrapper is `js-product t-store__card t-store__stretch-col …`,
+  // and inner text/btn wrappers carry `t-store__card_textwrapper`,
+  // `t-store__card_wrap_txt-and-btns`, `t-store__card__btns-wrapper`.
+  't-store__card',
+  't-store__card_textwrapper',
+  't-store__card_wrap_txt-and-btns',
+  't-store__card_wrap_all',
+  't-store__card_btns-wrapper',
+  't-store__card__btns-wrapper',
+  't-store-card',
+  // InSales / WordPress Storefront / OpenCart short forms
+  'js-catalog-item',
+  'js-item-product',
+  'storefront-product',
+  'opencart-product',
 ];
 
 /** Data-* attributes that almost always mark a single product card. */
@@ -88,6 +114,19 @@ export const PRODUCT_DATA_ATTRS: ReadonlyArray<string> = [
   'data-ean',
   'data-gtm-product',
   'data-item-id',
+  // Tilda — these appear on every Tilda product card.
+  'data-product-lid',
+  'data-product-uid',
+  'data-product-gen-uid',
+  'data-product-part-uid',
+  'data-product-url',
+  'data-product-img',
+  'data-product-inv',
+  'data-card-size',
+  // Common variants on other CMSes
+  'data-product-handle',
+  'data-product-name',
+  'data-itemid',
 ];
 
 /** Class tokens that should reject the element no matter what. */
