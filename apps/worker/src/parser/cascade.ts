@@ -3,6 +3,8 @@ import type { Extracted, ExtractedWithSource, ScrapingRules, SourcePath } from '
 import { parseJsonLd } from './json-ld.js';
 import { parseOpenGraph } from './open-graph.js';
 import { parseSelectors } from './selector.js';
+import { parseHeuristics } from './heuristic.js';
+import { parseVisibleText } from './visible-text.js';
 
 function merge(base: Extracted, other: Extracted): Extracted {
   return {
@@ -56,6 +58,18 @@ export function extract(html: string, rules: ScrapingRules): ExtractedWithSource
     combined = merge(combined, sel);
     primary = primary ?? 'selector';
     tried.push('selector');
+  }
+  const heur = parseHeuristics($);
+  if (heur) {
+    combined = merge(combined, heur);
+    primary = primary ?? 'heuristic';
+    tried.push('heuristic');
+  }
+  const visibleText = parseVisibleText($);
+  if (visibleText) {
+    combined = merge(combined, visibleText);
+    primary = primary ?? 'heuristic';
+    tried.push('heuristic');
   }
 
   if (!primary || combined.price == null) return null;

@@ -59,7 +59,7 @@ export interface ScrapingRulesPayload {
   useOpenGraph: boolean;
 }
 
-export type ScrapeSourcePath = 'json-ld' | 'og' | 'selector' | 'mixed';
+export type ScrapeSourcePath = 'json-ld' | 'og' | 'selector' | 'heuristic' | 'mixed';
 
 export type ScrapeResponse =
   | {

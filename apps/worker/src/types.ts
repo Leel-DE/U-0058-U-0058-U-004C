@@ -11,7 +11,7 @@ export interface ScrapingRules {
   useOpenGraph: boolean;
 }
 
-export type SourcePath = 'json-ld' | 'og' | 'selector' | 'mixed';
+export type SourcePath = 'json-ld' | 'og' | 'selector' | 'heuristic' | 'mixed';
 
 export type Availability = 'in_stock' | 'out_of_stock' | 'preorder' | 'limited' | 'unknown';
 

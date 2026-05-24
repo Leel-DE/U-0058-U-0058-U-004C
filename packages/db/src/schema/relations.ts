@@ -8,10 +8,21 @@ import { priceSnapshots, scrapeRuns } from './snapshots';
 import { productMatches } from './matches';
 import { alertRules, notifications } from './alerts';
 import { exports_, auditLogs } from './exports-audit';
+import { aiExtractionSuggestions, manualScrapingSessions } from './ai';
+import {
+  siteDiscoveryCategories,
+  siteDiscoveryLogs,
+  siteDiscoveryPages,
+  siteDiscoveryProducts,
+  siteDiscoveryRuns,
+} from './discovery';
 
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
   stores: many(stores),
+  aiExtractionSuggestions: many(aiExtractionSuggestions),
+  manualScrapingSessions: many(manualScrapingSessions),
+  siteDiscoveryRuns: many(siteDiscoveryRuns),
   myProducts: many(myProducts),
   competitorProducts: many(competitorProducts),
   categories: many(categories),
@@ -28,10 +39,76 @@ export const storesRelations = relations(stores, ({ one, many }) => ({
   rules: one(scrapingRules, { fields: [stores.id], references: [scrapingRules.storeId] }),
   products: many(competitorProducts),
   runs: many(scrapeRuns),
+  aiExtractionSuggestions: many(aiExtractionSuggestions),
+  manualScrapingSessions: many(manualScrapingSessions),
+  discoveryRuns: many(siteDiscoveryRuns),
 }));
 
 export const scrapingRulesRelations = relations(scrapingRules, ({ one }) => ({
   store: one(stores, { fields: [scrapingRules.storeId], references: [stores.id] }),
+}));
+
+export const aiExtractionSuggestionsRelations = relations(aiExtractionSuggestions, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [aiExtractionSuggestions.orgId],
+    references: [organizations.id],
+  }),
+  store: one(stores, { fields: [aiExtractionSuggestions.competitorId], references: [stores.id] }),
+}));
+
+export const manualScrapingSessionsRelations = relations(manualScrapingSessions, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [manualScrapingSessions.orgId],
+    references: [organizations.id],
+  }),
+  store: one(stores, { fields: [manualScrapingSessions.competitorId], references: [stores.id] }),
+}));
+
+export const siteDiscoveryRunsRelations = relations(siteDiscoveryRuns, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [siteDiscoveryRuns.orgId],
+    references: [organizations.id],
+  }),
+  store: one(stores, { fields: [siteDiscoveryRuns.competitorId], references: [stores.id] }),
+  pages: many(siteDiscoveryPages),
+  categories: many(siteDiscoveryCategories),
+  products: many(siteDiscoveryProducts),
+  logs: many(siteDiscoveryLogs),
+}));
+
+export const siteDiscoveryPagesRelations = relations(siteDiscoveryPages, ({ one }) => ({
+  run: one(siteDiscoveryRuns, {
+    fields: [siteDiscoveryPages.runId],
+    references: [siteDiscoveryRuns.id],
+  }),
+}));
+
+export const siteDiscoveryCategoriesRelations = relations(siteDiscoveryCategories, ({ one, many }) => ({
+  run: one(siteDiscoveryRuns, {
+    fields: [siteDiscoveryCategories.runId],
+    references: [siteDiscoveryRuns.id],
+  }),
+  store: one(stores, { fields: [siteDiscoveryCategories.competitorId], references: [stores.id] }),
+  products: many(siteDiscoveryProducts),
+}));
+
+export const siteDiscoveryProductsRelations = relations(siteDiscoveryProducts, ({ one }) => ({
+  run: one(siteDiscoveryRuns, {
+    fields: [siteDiscoveryProducts.runId],
+    references: [siteDiscoveryRuns.id],
+  }),
+  store: one(stores, { fields: [siteDiscoveryProducts.competitorId], references: [stores.id] }),
+  category: one(siteDiscoveryCategories, {
+    fields: [siteDiscoveryProducts.categoryId],
+    references: [siteDiscoveryCategories.id],
+  }),
+}));
+
+export const siteDiscoveryLogsRelations = relations(siteDiscoveryLogs, ({ one }) => ({
+  run: one(siteDiscoveryRuns, {
+    fields: [siteDiscoveryLogs.runId],
+    references: [siteDiscoveryRuns.id],
+  }),
 }));
 
 export const competitorProductsRelations = relations(competitorProducts, ({ one, many }) => ({

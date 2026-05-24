@@ -8,6 +8,45 @@ import { classifyResponse } from './detect/block.js';
 import { checkRobots } from './robots/check.js';
 import { throttleByDomain } from './rate-limit.js';
 import type { ScrapingRules, ErrorCode } from './types.js';
+import { cleanDom } from './ai/cleaners/clean-dom.js';
+import { reduceDomForPrompt, estimateTokens } from './ai/cleaners/reduce-dom.js';
+import { debounceAi, aiCacheStats } from './ai/cache/ai-cache.js';
+import { aiStatus, getAIProvider } from './ai/providers/index.js';
+import { selectorSuggestionSchema } from './ai/schemas/selector-suggestion.js';
+import { categorySuggestionSchema } from './ai/schemas/category-suggestion.js';
+import { validateProductSelectors, validateCategorySelectors } from './ai/validators/selector-validator.js';
+import { detectCategoryHeuristics } from './ai/validators/category-heuristic.js';
+import {
+  cancelManualSession,
+  continueManualSession,
+  getDomainStorageState,
+  markManualSession,
+  sessionStatus,
+  startManualSession,
+} from './manual/session-manager.js';
+import {
+  closeNow as closeManualSessionNow,
+  complete as completeManualSession,
+  list as listManualSessions,
+  recordActivity as recordManualActivity,
+  reopen as reopenManualSession,
+  setKeepOpen as setManualKeepOpen,
+  tearDownIfReady as tearDownManualIfReady,
+  type ActivityPhase,
+} from './manual/browser-session-manager.js';
+import {
+  rehydrateFromDisk as rehydrateManualStorage,
+} from './manual/session-manager.js';
+import { startSessionCleanup, stopSessionCleanup } from './manual/session-cleanup.js';
+import {
+  cancelDiscoveryRun,
+  discoveryLogs,
+  discoveryReport,
+  discoveryStatus,
+  pauseDiscoveryRun,
+  resumeDiscoveryRun,
+  startDiscoveryRun,
+} from './discovery/discovery-runner.js';
 
 const logger = pino({ name: 'cr-worker', level: process.env.LOG_LEVEL ?? 'info' });
 const PORT = Number(process.env.PORT ?? 4000);
@@ -34,6 +73,57 @@ const scrapeReqSchema = z.object({
   timeoutMs: z.number().int().min(1000).max(60_000).optional(),
 });
 
+const previewReqSchema = scrapeReqSchema.omit({ strategy: true }).extend({
+  strategy: z.enum(['cheerio', 'playwright', 'auto']).default('auto'),
+});
+
+const autoDetectReqSchema = z.object({
+  url: z.string().url(),
+  pageType: z.enum(['product', 'category']).default('product'),
+  strategy: z.enum(['cheerio', 'playwright', 'auto']).default('auto'),
+  respectRobots: z.boolean().default(true),
+  userAgent: z.string().min(5),
+  timeoutMs: z.number().int().min(1000).max(60_000).optional(),
+});
+
+const manualSessionReqSchema = z.object({
+  url: z.string().url(),
+  userAgent: z.string().min(5),
+  rules: scrapeReqSchema.shape.rules.optional(),
+  timeoutMs: z.number().int().min(1000).max(120_000).optional(),
+});
+
+const manualContinueReqSchema = z.object({
+  sessionId: z.string().uuid(),
+  rules: scrapeReqSchema.shape.rules.optional(),
+  timeoutMs: z.number().int().min(1000).max(60_000).optional(),
+});
+
+const discoveryStartReqSchema = z.object({
+  runId: z.string().uuid().optional(),
+  organizationId: z.string().uuid().optional(),
+  competitorId: z.string().uuid().optional(),
+  startUrl: z.string().url(),
+  maxPages: z.number().int().min(1).max(1000).default(300),
+  maxProducts: z.number().int().min(1).max(5000).default(1000),
+  crawlDepth: z.number().int().min(0).max(8).default(4),
+  maxPagesPerCategory: z.number().int().min(1).max(100).default(20),
+  maxScrollIterations: z.number().int().min(0).max(30).default(10),
+  concurrency: z.number().int().min(1).max(3).default(1),
+  mode: z.enum(['category_scan', 'detail_enrichment']).default('category_scan'),
+  respectRobotsTxt: z.boolean().default(true),
+  useAi: z.boolean().default(false),
+  useManualCaptcha: z.boolean().default(true),
+  includePatterns: z.array(z.string()).default([]),
+  excludePatterns: z.array(z.string()).default([]),
+  domainAllowlist: z.array(z.string()).default([]),
+  userAgent: z.string().min(5),
+});
+
+const discoveryControlReqSchema = z.object({
+  runId: z.string().uuid(),
+});
+
 const DEFAULT_PER_DOMAIN_DELAY_MS = 1_000;
 
 const app = Fastify({ logger: false });
@@ -51,7 +141,14 @@ app.addHook('onRequest', async (req, reply) => {
 app.get('/health', async () => ({
   ok: true,
   mode: process.env.LOCAL_DEV_MODE === 'true' ? 'local' : 'standard',
+  ai: { ...aiStatus(), cache: aiCacheStats() },
   ts: new Date().toISOString(),
+}));
+
+app.get('/ai/status', async () => ({
+  ok: true,
+  ...aiStatus(),
+  cache: aiCacheStats(),
 }));
 
 app.get('/robots.txt', async (_, reply) => {
@@ -154,7 +251,7 @@ app.post('/scrape', async (req, reply) => {
     try {
       fetched =
         usePw && strategy === 'playwright'
-          ? await fetchHtmlBrowser(url, userAgent, timeoutMs ?? 30_000)
+          ? await fetchHtmlBrowser(url, userAgent, timeoutMs ?? 30_000, getDomainStorageState(host))
           : await fetchHtml(url, userAgent, timeoutMs ?? 15_000);
     } catch (err) {
       logger.warn({ err: (err as Error).message, url }, 'fetch_error');
@@ -171,7 +268,7 @@ app.post('/scrape', async (req, reply) => {
       // Escalate to Playwright if cheerio looked suspicious and we haven't used PW yet
       if (cls.code === 'suspicious' && fetched.strategy === 'cheerio' && strategy === 'auto') {
         try {
-          const pw = await fetchHtmlBrowser(url, userAgent, timeoutMs ?? 30_000);
+          const pw = await fetchHtmlBrowser(url, userAgent, timeoutMs ?? 30_000, getDomainStorageState(host));
           const cls2 = classifyResponse(pw.status, pw.html);
           if (cls2.ok) {
             fetched = pw;
@@ -259,9 +356,461 @@ app.post('/scrape', async (req, reply) => {
   }
 });
 
+app.post('/scrape/preview', async (req, reply) => {
+  const parse = previewReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, errorCode: 'http_error', message: 'invalid_payload', meta: { strategy: 'cheerio', durationMs: 0 } };
+  }
+  const body = parse.data;
+  req.body = { ...body, strategy: body.strategy };
+  return app.inject({
+    method: 'POST',
+    url: '/scrape',
+    headers: { authorization: req.headers.authorization as string, 'content-type': 'application/json' },
+    payload: body,
+  }).then(async (res) => JSON.parse(res.body));
+});
+
+app.post('/scrape/auto-detect', async (req, reply) => {
+  const parse = autoDetectReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, errorCode: 'http_error', message: 'invalid_payload' };
+  }
+  const { url, pageType, strategy, respectRobots, userAgent, timeoutMs } = parse.data;
+  const startedAt = Date.now();
+  const host = new URL(url).hostname;
+
+  if (respectRobots) {
+    const robots = await checkRobots(url, userAgent);
+    if (!robots.allowed) {
+      return { ok: false, errorCode: 'skipped_robots', message: `robots.txt disallows ${url}` };
+    }
+  }
+
+  await throttleByDomain(host, DEFAULT_PER_DOMAIN_DELAY_MS);
+  const fetched =
+    strategy === 'playwright'
+      ? await fetchHtmlBrowser(url, userAgent, timeoutMs ?? 30_000, getDomainStorageState(host))
+      : await fetchHtml(url, userAgent, timeoutMs ?? 15_000);
+  const cls = classifyResponse(fetched.status, fetched.html);
+  if (!cls.ok) {
+    return {
+      ok: false,
+      errorCode: cls.code,
+      message: `${cls.code} on ${url}`,
+      manualSessionRecommended: cls.code === 'captcha' || cls.code === 'blocked' || cls.code === 'suspicious',
+    };
+  }
+
+  const cleaned = cleanDom(fetched.html);
+  const provider = getAIProvider();
+  const reducedDom = reduceDomForPrompt(cleaned.html, Number(process.env.AI_EXTRACTION_MAX_HTML_CHARS ?? 60_000));
+
+  try {
+    if (pageType === 'category') {
+      const heuristic = detectCategoryHeuristics(fetched.html);
+      if (heuristic && heuristic.confidence >= 0.7) {
+        return {
+          ok: true,
+          pageType,
+          aiEnabled: Boolean(provider),
+          source: 'heuristic',
+          suggestion: heuristic,
+          validation: validateCategorySelectors(fetched.html, heuristic),
+          cleanedDomHash: cleaned.hash,
+          tokenEstimate: estimateTokens(reducedDom),
+          meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+        };
+      }
+      if (!provider) {
+        return { ok: false, errorCode: 'ai_disabled', message: 'AI is disabled and category heuristics were not confident enough', heuristic };
+      }
+      const { value: suggestion, cacheHit } = await debounceAi(`category:${cleaned.hash}`, () =>
+        provider.detectCategorySelectors({ url, cleanedDom: reducedDom, domHash: cleaned.hash }),
+      );
+      const parsed = categorySuggestionSchema.parse(suggestion);
+      return {
+        ok: true,
+        pageType,
+        aiEnabled: true,
+        source: cacheHit ? 'ai_cache' : 'ai',
+        suggestion: parsed,
+        validation: validateCategorySelectors(fetched.html, parsed),
+        cleanedDomHash: cleaned.hash,
+        tokenEstimate: estimateTokens(reducedDom),
+        meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+      };
+    }
+
+    if (!provider) {
+      const preview = extract(fetched.html, { useJsonLd: true, useOpenGraph: true });
+      return {
+        ok: Boolean(preview),
+        pageType,
+        aiEnabled: false,
+        source: preview ? preview.sourcePath : 'none',
+        message: preview ? 'AI disabled; structured data or heuristics produced a preview.' : 'AI disabled and no usable extraction found.',
+        preview,
+        cleanedDomHash: cleaned.hash,
+        meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+      };
+    }
+
+    const { value: suggestion, cacheHit } = await debounceAi(`product:${cleaned.hash}`, () =>
+      provider.detectProductSelectors({ url, cleanedDom: reducedDom, domHash: cleaned.hash }),
+    );
+    const parsed = selectorSuggestionSchema.parse(suggestion);
+    const validation = validateProductSelectors(fetched.html, parsed);
+    const rules: ScrapingRules = {
+      ...parsed,
+      priceRegex: null,
+      useJsonLd: true,
+      useOpenGraph: true,
+    };
+    const preview = extract(fetched.html, rules);
+    return {
+      ok: true,
+      pageType,
+      aiEnabled: true,
+      source: cacheHit ? 'ai_cache' : 'ai',
+      suggestion: parsed,
+      validation,
+      preview,
+      cleanedDomHash: cleaned.hash,
+      tokenEstimate: estimateTokens(reducedDom),
+      meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+    };
+  } catch (err) {
+    logger.warn({ err: (err as Error).message, url }, 'auto_detect_failed');
+    const preview = extract(fetched.html, { useJsonLd: true, useOpenGraph: true });
+    return {
+      ok: Boolean(preview),
+      pageType,
+      aiEnabled: Boolean(provider),
+      source: preview ? preview.sourcePath : 'none',
+      errorCode: 'ai_failed',
+      message: (err as Error).message,
+      preview,
+      cleanedDomHash: cleaned.hash,
+      meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+    };
+  }
+});
+
+app.post('/scrape/manual-session/start', async (req, reply) => {
+  const parse = manualSessionReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  const status = await startManualSession(parse.data.url, parse.data.userAgent, parse.data.timeoutMs);
+  if (!status || !parse.data.rules) return { ok: Boolean(status), session: status };
+
+  const { status: readStatus, fetched } = await continueManualSession(status.id, parse.data.timeoutMs);
+  if (!fetched) return { ok: Boolean(readStatus), session: readStatus };
+  const data = extract(fetched.html, parse.data.rules as ScrapingRules);
+  if (data) {
+    const session = markManualSession(status.id, 'preview_ready', 'Extraction preview is ready from the visible browser.');
+    return {
+      ok: true,
+      paused: false,
+      session,
+      preview: data,
+      raw: { htmlSnippet: fetched.html.slice(0, 4_000) },
+    };
+  }
+  const cls = classifyResponse(fetched.status, fetched.html);
+  if (!cls.ok) {
+    const paused = cls.code === 'captcha' || cls.code === 'blocked' || cls.code === 'suspicious';
+    const session = markManualSession(
+      status.id,
+      paused ? 'waiting_for_manual_action' : 'failed',
+      paused
+        ? `${cls.code} detected in visible browser. Complete the challenge in that window, then continue.`
+        : `${cls.code} detected in visible browser.`,
+    );
+    return {
+      ok: true,
+      paused,
+      needsManualAction: paused,
+      errorCode: cls.code,
+      message: paused
+        ? 'Manual browser is paused until you complete the challenge.'
+        : `${cls.code} on ${parse.data.url}`,
+      session,
+      raw: { htmlSnippet: fetched.html.slice(0, 4_000) },
+    };
+  }
+
+  const session = markManualSession(status.id, 'waiting_for_manual_action', 'Visible browser loaded, but extraction did not find a price. Adjust selectors or continue after the page settles.');
+  return {
+    ok: true,
+    paused: false,
+    session,
+    preview: null,
+    raw: { htmlSnippet: fetched.html.slice(0, 4_000) },
+  };
+});
+
+app.post('/scrape/manual-session/continue', async (req, reply) => {
+  const parse = manualContinueReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  const { status, fetched } = await continueManualSession(parse.data.sessionId, parse.data.timeoutMs);
+  if (!status || !fetched) return { ok: Boolean(status), session: status };
+  const data = parse.data.rules ? extract(fetched.html, parse.data.rules as ScrapingRules) : undefined;
+  if (data) {
+    const session = markManualSession(parse.data.sessionId, 'preview_ready', 'Extraction preview is ready from the visible browser.');
+    return { ok: true, paused: false, session, preview: data, raw: { htmlSnippet: fetched.html.slice(0, 4_000) } };
+  }
+  const cls = classifyResponse(fetched.status, fetched.html);
+  if (!cls.ok) {
+    const paused = cls.code === 'captcha' || cls.code === 'blocked' || cls.code === 'suspicious';
+    const session = markManualSession(
+      parse.data.sessionId,
+      paused ? 'waiting_for_manual_action' : 'failed',
+      paused
+        ? `${cls.code} is still visible. Keep the browser open, complete it, then continue again.`
+        : `${cls.code} detected after continuing manual session.`,
+    );
+    return {
+      ok: true,
+      paused,
+      needsManualAction: paused,
+      errorCode: cls.code,
+      message: paused ? 'Still waiting for manual action in the browser window.' : `${cls.code} after manual continue`,
+      session,
+      raw: { htmlSnippet: fetched.html.slice(0, 4_000) },
+    };
+  }
+  const session = markManualSession(parse.data.sessionId, 'waiting_for_manual_action', 'Visible browser is readable, but extraction did not find a price. Adjust selectors or wait for the page to settle.');
+  return { ok: true, paused: false, session, preview: null, raw: { htmlSnippet: fetched.html.slice(0, 4_000) } };
+});
+
+app.post('/scrape/manual-session/cancel', async (req, reply) => {
+  const parse = z.object({ sessionId: z.string().uuid() }).safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  return { ok: true, session: await cancelManualSession(parse.data.sessionId) };
+});
+
+app.get('/scrape/manual-session/:id/status', async (req, reply) => {
+  const params = z.object({ id: z.string().uuid() }).safeParse(req.params);
+  if (!params.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_session_id' };
+  }
+  const status = sessionStatus(params.data.id);
+  if (!status) {
+    reply.code(404);
+    return { ok: false, message: 'session_not_found' };
+  }
+  return { ok: true, session: status };
+});
+
+// ---- Lifecycle controls (added by browser-session-manager) ----------------
+
+app.get('/scrape/manual-session', async () => {
+  return { ok: true, sessions: listManualSessions() };
+});
+
+const keepOpenSchema = z.object({
+  sessionId: z.string().uuid(),
+  keepOpen: z.boolean(),
+});
+app.post('/scrape/manual-session/keep-open', async (req, reply) => {
+  const parse = keepOpenSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  const session = setManualKeepOpen(parse.data.sessionId, parse.data.keepOpen);
+  if (!session) {
+    reply.code(404);
+    return { ok: false, message: 'session_not_found' };
+  }
+  return { ok: true, session };
+});
+
+const closeNowSchema = z.object({ sessionId: z.string().uuid() });
+app.post('/scrape/manual-session/close-now', async (req, reply) => {
+  const parse = closeNowSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  const session = await closeManualSessionNow(parse.data.sessionId);
+  if (!session) {
+    reply.code(404);
+    return { ok: false, message: 'session_not_found' };
+  }
+  return { ok: true, session };
+});
+
+const reopenSchema = z.object({ sessionId: z.string().uuid() });
+app.post('/scrape/manual-session/reopen', async (req, reply) => {
+  const parse = reopenSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  const session = await reopenManualSession(parse.data.sessionId);
+  if (!session) {
+    reply.code(404);
+    return { ok: false, message: 'session_not_found' };
+  }
+  return { ok: true, session };
+});
+
+const completeSchema = z.object({
+  sessionId: z.string().uuid(),
+  note: z.string().max(500).optional(),
+});
+app.post('/scrape/manual-session/complete', async (req, reply) => {
+  const parse = completeSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  completeManualSession(parse.data.sessionId, parse.data.note);
+  const session = await tearDownManualIfReady(parse.data.sessionId);
+  if (!session) {
+    reply.code(404);
+    return { ok: false, message: 'session_not_found' };
+  }
+  return { ok: true, session };
+});
+
+const activitySchema = z.object({
+  sessionId: z.string().uuid(),
+  delta: z
+    .object({
+      activeJobsCount: z.number().int().optional(),
+      activePagesCount: z.number().int().optional(),
+      pendingUrlsCount: z.number().int().optional(),
+      pendingRetriesCount: z.number().int().optional(),
+      phase: z
+        .enum([
+          'idle',
+          'navigating',
+          'awaiting_user',
+          'extracting',
+          'discovering',
+          'paginating',
+          'persisting',
+          'closing',
+        ])
+        .optional(),
+    })
+    .default({}),
+});
+app.post('/scrape/manual-session/activity', async (req, reply) => {
+  const parse = activitySchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  const session = recordManualActivity(
+    parse.data.sessionId,
+    parse.data.delta as Partial<{
+      activeJobsCount: number;
+      activePagesCount: number;
+      pendingUrlsCount: number;
+      pendingRetriesCount: number;
+      phase: ActivityPhase;
+    }>,
+  );
+  if (!session) {
+    reply.code(404);
+    return { ok: false, message: 'session_not_found' };
+  }
+  return { ok: true, session };
+});
+
+app.post('/discovery/start', async (req, reply) => {
+  const parse = discoveryStartReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload', errors: parse.error.flatten().fieldErrors };
+  }
+  const status = await startDiscoveryRun(parse.data);
+  return { ok: true, status };
+});
+
+app.post('/discovery/pause', async (req, reply) => {
+  const parse = discoveryControlReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  return { ok: true, status: await pauseDiscoveryRun(parse.data.runId) };
+});
+
+app.post('/discovery/resume', async (req, reply) => {
+  const parse = discoveryControlReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  return { ok: true, status: await resumeDiscoveryRun(parse.data.runId) };
+});
+
+app.post('/discovery/cancel', async (req, reply) => {
+  const parse = discoveryControlReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  return { ok: true, status: await cancelDiscoveryRun(parse.data.runId) };
+});
+
+app.get('/discovery/:runId/status', async (req, reply) => {
+  const parse = discoveryControlReqSchema.safeParse(req.params);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_run_id' };
+  }
+  const status = discoveryStatus(parse.data.runId);
+  if (!status) {
+    reply.code(404);
+    return { ok: false, message: 'run_not_found' };
+  }
+  return { ok: true, status };
+});
+
+app.get('/discovery/:runId/logs', async (req, reply) => {
+  const parse = discoveryControlReqSchema.safeParse(req.params);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_run_id' };
+  }
+  return { ok: true, logs: discoveryLogs(parse.data.runId) ?? [] };
+});
+
+app.get('/discovery/:runId/report', async (req, reply) => {
+  const parse = discoveryControlReqSchema.safeParse(req.params);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_run_id' };
+  }
+  const report = discoveryReport(parse.data.runId);
+  if (!report) {
+    reply.code(404);
+    return { ok: false, message: 'run_not_found' };
+  }
+  return { ok: true, report };
+});
+
 const shutdown = async () => {
   logger.info('shutting down');
   try {
+    stopSessionCleanup();
     await app.close();
   } finally {
     await closePlaywright();
@@ -273,7 +822,15 @@ process.on('SIGINT', shutdown);
 
 app
   .listen({ port: PORT, host: HOST })
-  .then((addr) => logger.info({ addr }, 'worker listening'))
+  .then(async (addr) => {
+    logger.info({ addr }, 'worker listening');
+    // Best-effort: load persisted domain storage states + start cleanup loop.
+    const rehydrated = await rehydrateManualStorage();
+    if (rehydrated > 0) {
+      logger.info({ rehydrated }, 'restored persisted manual storage states');
+    }
+    startSessionCleanup();
+  })
   .catch((err) => {
     logger.error(err);
     process.exit(1);

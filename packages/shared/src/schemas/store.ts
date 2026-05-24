@@ -70,3 +70,22 @@ export const testScrapeSchema = z.object({
   url: z.string().url(),
 });
 export type TestScrapeInput = z.infer<typeof testScrapeSchema>;
+
+export const autoDetectScrapeSchema = z.object({
+  storeId: z.string().uuid(),
+  url: z.string().url(),
+  pageType: z.enum(['product', 'category']).default('product'),
+});
+export type AutoDetectScrapeInput = z.infer<typeof autoDetectScrapeSchema>;
+
+export const manualSessionStartSchema = z.object({
+  storeId: z.string().uuid(),
+  url: z.string().url(),
+});
+export type ManualSessionStartInput = z.infer<typeof manualSessionStartSchema>;
+
+export const manualSessionContinueSchema = z.object({
+  storeId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+});
+export type ManualSessionContinueInput = z.infer<typeof manualSessionContinueSchema>;

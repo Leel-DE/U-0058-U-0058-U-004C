@@ -40,7 +40,20 @@
       "Bash(curl -s -m 5 http://localhost:3001/api/inngest)",
       "Bash(curl -s -m 8 -X PUT http://localhost:3001/api/inngest)",
       "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Audit fixes: typecheck, tests, SQL portability, worker types *)",
-      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Seed super-admin via Supabase Auth admin API *)"
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Seed super-admin via Supabase Auth admin API *)",
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Manual session lifecycle: state machine + activity tracking + auto-close *)",
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Fix manual session auto-close: discovery must reuse browser + signal complete *)",
+      "Bash(pnpm --filter @cr/worker test)",
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Fix false-positive captcha detection after manual takeover *)",
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Fix discovery 0-products bug: page classifier had the same false-positive *)",
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Recognise German + data-product-id product card markup *)",
+      "Bash(node debug-lazy.mjs)",
+      "Bash(rm -f apps/worker/debug-lazy.mjs apps/worker/dist)",
+      "Bash(rm -rf apps/worker/dist)",
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Fix bogus prices + missing thumbnails in discovery cards *)",
+      "Bash(sed -i 's/Cheerio<Element>/Cheerio<Node>/g' apps/worker/src/discovery/field-extractor.ts)",
+      "Bash(sed -i 's/Cheerio<Element>/Cheerio<Node>/g; s/import type { Element } from .domhandler.;/import type { AnyNode } from \"domhandler\";\\\\ntype Node = AnyNode;/' apps/worker/src/discovery/product-card-detector.ts)",
+      "Bash(node debug-detector.mjs)"
     ]
   }
 }

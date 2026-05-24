@@ -8,4 +8,6 @@ export * from './snapshots';
 export * from './matches';
 export * from './alerts';
 export * from './exports-audit';
+export * from './ai';
+export * from './discovery';
 export * from './relations';

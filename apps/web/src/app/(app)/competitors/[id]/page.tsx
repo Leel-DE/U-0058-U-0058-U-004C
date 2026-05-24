@@ -44,6 +44,9 @@ export default async function CompetitorDetail({ params }: { params: Promise<{ i
         {canManage ? (
           <div className="flex gap-2">
             <Button asChild variant="outline">
+              <Link href={`/competitors/${store.id}/discovery`}>Site discovery</Link>
+            </Button>
+            <Button asChild variant="outline">
               <Link href={`/competitors/${store.id}/rules`}>Scraping rules</Link>
             </Button>
             <Button asChild>

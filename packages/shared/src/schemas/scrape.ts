@@ -42,7 +42,7 @@ export const scrapeResponseOkSchema = z.object({
     httpStatus: z.number(),
     durationMs: z.number(),
     robotsAllowed: z.boolean(),
-    sourcePath: z.enum(['json-ld', 'og', 'selector', 'mixed']),
+    sourcePath: z.enum(['json-ld', 'og', 'selector', 'heuristic', 'mixed']),
     confidence: z.number().min(0).max(1),
   }),
   raw: z.object({ htmlSnippet: z.string().optional() }).optional(),

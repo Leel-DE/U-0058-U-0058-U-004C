@@ -41,9 +41,19 @@ export async function fetchHtmlBrowser(
   url: string,
   userAgent: string,
   timeoutMs: number,
+  storageStateJson?: string,
 ): Promise<FetchResult> {
   const t0 = Date.now();
-  const ctx = await getContext(userAgent);
+  const ctx = storageStateJson
+    ? await chromium.launch({ headless: true }).then((b) =>
+        b.newContext({
+          userAgent,
+          viewport: { width: 1366, height: 800 },
+          locale: 'en-US',
+          storageState: JSON.parse(storageStateJson) as never,
+        }),
+      )
+    : await getContext(userAgent);
   while (openPages >= MAX_PAGES) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -66,6 +76,7 @@ export async function fetchHtmlBrowser(
     };
   } finally {
     await page.close().catch(() => null);
+    if (storageStateJson) await ctx.browser()?.close().catch(() => null);
     openPages = Math.max(0, openPages - 1);
   }
 }
