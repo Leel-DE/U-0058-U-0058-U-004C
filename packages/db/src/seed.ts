@@ -1,9 +1,12 @@
-// Seeds a demo organization with a couple of stores, products, snapshots and an alert rule.
-// Idempotent — re-running upserts everything by deterministic IDs.
+// Seeds a demo organization with stores, products, snapshots, alert rule —
+// and optionally a super-admin user (Supabase Auth + owner membership)
+// when SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY + SEED_ADMIN_* are set.
+// Idempotent: deterministic IDs + onConflictDoNothing/Update everywhere.
 import 'dotenv/config';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { sql as drizzleSql } from 'drizzle-orm';
+import { and, eq, sql as drizzleSql } from 'drizzle-orm';
+import { createClient } from '@supabase/supabase-js';
 import {
   organizations,
   stores,
@@ -13,6 +16,8 @@ import {
   priceSnapshots,
   alertRules,
   categories,
+  profiles,
+  memberships,
 } from './schema';
 import { createHash } from 'node:crypto';
 
@@ -26,6 +31,106 @@ const COMP_PROD_B = '00000000-0000-4000-8000-000000000041';
 const ALERT_ID = '00000000-0000-4000-8000-000000000050';
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
+
+type Db = ReturnType<typeof drizzle>;
+
+/**
+ * Try to create (or look up) a Supabase Auth user and attach them as owner
+ * of the demo org. Returns the user id if successful, null otherwise.
+ */
+async function provisionSuperAdmin(db: Db): Promise<string | null> {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const email = process.env.SEED_ADMIN_EMAIL ?? 'admin@demo.local';
+  const password = process.env.SEED_ADMIN_PASSWORD ?? 'DemoAdmin!2026';
+
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    console.log(
+      '⚠  SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing — skipping super-admin creation.',
+    );
+    console.log('   (Local Postgres-only seed: the demo org exists but has no owner yet.)');
+    return null;
+  }
+
+  const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  console.log(`▶ ensuring auth user ${email} exists …`);
+  let userId: string | null = null;
+
+  // Try create. If the user already exists, list and find them.
+  const create = await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: 'Demo Admin' },
+  });
+
+  if (create.error) {
+    const msg = create.error.message.toLowerCase();
+    if (
+      msg.includes('already registered') ||
+      msg.includes('already been registered') ||
+      msg.includes('user already exists') ||
+      msg.includes('duplicate')
+    ) {
+      console.log('  user already exists — looking up id …');
+      // Paginate up to 10 pages of 1000 to find by email
+      for (let page = 1; page <= 10 && !userId; page++) {
+        const list = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+        if (list.error) {
+          console.error('  listUsers failed:', list.error.message);
+          break;
+        }
+        const found = list.data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+        if (found) {
+          userId = found.id;
+          // Rotate password to match .env so the operator can always log in
+          const upd = await supabase.auth.admin.updateUserById(found.id, {
+            password,
+            email_confirm: true,
+          });
+          if (upd.error) {
+            console.warn('  password update failed:', upd.error.message);
+          } else {
+            console.log('  password reset to SEED_ADMIN_PASSWORD');
+          }
+        }
+        if (list.data.users.length < 1000) break;
+      }
+    } else {
+      console.error('  createUser failed:', create.error.message);
+      return null;
+    }
+  } else {
+    userId = create.data.user?.id ?? null;
+    console.log('  created auth user', userId);
+  }
+
+  if (!userId) {
+    console.warn('  could not resolve user id; skipping membership.');
+    return null;
+  }
+
+  // Ensure profile row exists (the on_auth_user_created trigger does this on
+  // Supabase, but we also call it here for defence-in-depth and for bare PG).
+  await db
+    .insert(profiles)
+    .values({ id: userId, email, fullName: 'Demo Admin' })
+    .onConflictDoNothing();
+
+  // Attach as owner of the demo org.
+  await db
+    .insert(memberships)
+    .values({ orgId: ORG_ID, userId, role: 'owner' })
+    .onConflictDoUpdate({
+      target: [memberships.orgId, memberships.userId],
+      set: { role: 'owner' },
+    });
+
+  return userId;
+}
 
 async function main() {
   const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
@@ -189,9 +294,24 @@ async function main() {
     })
     .onConflictDoNothing();
 
+  // Super-admin (Supabase Auth → owner of demo org). Skipped silently if
+  // SUPABASE_URL/SERVICE_ROLE_KEY are missing (e.g. local Postgres-only audit run).
+  const adminId = await provisionSuperAdmin(db);
+
   await client.end();
-  console.log('Seed complete.');
-  console.log('Demo org:', { ORG_ID, slug: 'demo' });
+
+  console.log('\n✓ Seed complete.\n');
+  console.log('  Demo org id :', ORG_ID);
+  console.log('  Demo org slug: demo');
+  if (adminId) {
+    const email = process.env.SEED_ADMIN_EMAIL ?? 'admin@demo.local';
+    const password = process.env.SEED_ADMIN_PASSWORD ?? 'DemoAdmin!2026';
+    console.log('\n  Super-admin credentials (also in your .env.local):');
+    console.log(`    email   : ${email}`);
+    console.log(`    password: ${password}`);
+    console.log(`    user id : ${adminId}`);
+    console.log('  Sign in at http://localhost:3000/login');
+  }
 }
 
 main().catch((err) => {

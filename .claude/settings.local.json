@@ -39,7 +39,8 @@
       "Bash(PORT=3001 pnpm exec next start -p 3001)",
       "Bash(curl -s -m 5 http://localhost:3001/api/inngest)",
       "Bash(curl -s -m 8 -X PUT http://localhost:3001/api/inngest)",
-      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Audit fixes: typecheck, tests, SQL portability, worker types *)"
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Audit fixes: typecheck, tests, SQL portability, worker types *)",
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Seed super-admin via Supabase Auth admin API *)"
     ]
   }
 }

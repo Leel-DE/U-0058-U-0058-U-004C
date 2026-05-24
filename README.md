@@ -44,7 +44,7 @@ pnpm install
 cp .env.example .env.local
 # edit .env.local with your Supabase + worker secret
 
-# 3. push schema + seed demo data
+# 3. push schema + seed demo data + super-admin
 pnpm db:push
 pnpm db:seed
 
@@ -54,7 +54,24 @@ pnpm dev           # Next.js on :3000, worker on :4000
 npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
 ```
 
-Open http://localhost:3000 → sign up → you should land on `/dashboard`.
+### Super-admin login
+
+`pnpm db:seed` provisions a user via the Supabase Auth admin API and makes
+them `owner` of the demo organization. Defaults from `.env.example`:
+
+```
+email   : admin@demo.local
+password: DemoAdmin!2026
+```
+
+Open http://localhost:3000/login and use those credentials. Override
+`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` in `.env.local` before seeding
+anything close to production. The seed is idempotent: re-running rotates the
+password to whatever is currently in `.env.local`.
+
+> Note: this step requires a real `SUPABASE_SERVICE_ROLE_KEY` because
+> creating auth users needs admin privileges. If those vars are missing the
+> seed still loads demo data but logs a warning and skips the admin user.
 
 ## Scripts
 
