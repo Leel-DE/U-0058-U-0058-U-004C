@@ -38,9 +38,24 @@ const recaptchaForm = `
 ${'<p>filler</p>'.repeat(200)}
 `;
 
+const securityVerificationPage = `
+<!doctype html>
+<html><head><title>www.fahrrad24.de</title></head>
+<body>
+  <h1>www.fahrrad24.de</h1>
+  <h2>Performing security verification</h2>
+  <p>This website uses a security service to protect against malicious bots.</p>
+  <p>This page is displayed while the website verifies you are not a bot.</p>
+</body></html>
+${'<div>padding</div>'.repeat(200)}
+`;
+
 describe('classifyResponse (loose)', () => {
   it('flags Cloudflare challenge page', () => {
     expect(classifyResponse(200, realCaptchaChallenge)).toEqual({ ok: false, code: 'captcha' });
+  });
+  it('flags security verification interstitials', () => {
+    expect(classifyResponse(200, securityVerificationPage)).toEqual({ ok: false, code: 'captcha' });
   });
   it('flags HTTP 429 immediately', () => {
     expect(classifyResponse(429, 'whatever')).toEqual({ ok: false, code: 'blocked' });
@@ -59,6 +74,9 @@ describe('classifyResponseStrict (post-captcha)', () => {
   });
   it('still flags an actual Cloudflare challenge', () => {
     expect(classifyResponseStrict(200, realCaptchaChallenge)).toEqual({ ok: false, code: 'captcha' });
+  });
+  it('still flags security verification interstitials', () => {
+    expect(classifyResponseStrict(200, securityVerificationPage)).toEqual({ ok: false, code: 'captcha' });
   });
   it('still flags a hard HTTP block', () => {
     expect(classifyResponseStrict(403, 'forbidden')).toEqual({ ok: false, code: 'blocked' });

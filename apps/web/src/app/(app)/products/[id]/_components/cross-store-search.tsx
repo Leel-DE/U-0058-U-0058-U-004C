@@ -6,8 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { ProductImage } from '@/components/product-image';
 import { formatCurrency, timeAgo } from '@/lib/utils';
-import { findCandidatesInScrapedData, matchProductByUrl } from '@/server/actions/cross-store-search';
+import {
+  findCandidatesInScrapedData,
+  matchProductByUrl,
+} from '@/server/actions/cross-store-search';
 import type { CrossStoreCandidate, ProductMissingStore } from '@/server/products/types';
 
 interface Props {
@@ -22,10 +26,17 @@ interface StoreScanState {
   scannedAt: number;
 }
 
-export function CrossStoreSearch({ myProductId, productTitle, productBrand, missingStores }: Props) {
+export function CrossStoreSearch({
+  myProductId,
+  productTitle,
+  productBrand,
+  missingStores,
+}: Props) {
   const stocked = missingStores.filter((store) => store.scrapedCount > 0);
   const empty = missingStores.filter((store) => store.scrapedCount === 0);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(stocked.map((s) => s.storeId)));
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(stocked.map((s) => s.storeId)),
+  );
   const [scanResults, setScanResults] = useState<Record<string, StoreScanState>>({});
   const [matching, setMatching] = useState<string | null>(null);
   const [matchedNow, setMatchedNow] = useState<Set<string>>(new Set());
@@ -43,7 +54,9 @@ export function CrossStoreSearch({ myProductId, productTitle, productBrand, miss
   }
 
   function toggleAll() {
-    setSelected((prev) => (prev.size === stocked.length ? new Set() : new Set(stocked.map((s) => s.storeId))));
+    setSelected((prev) =>
+      prev.size === stocked.length ? new Set() : new Set(stocked.map((s) => s.storeId)),
+    );
   }
 
   function findInDb() {
@@ -95,7 +108,9 @@ export function CrossStoreSearch({ myProductId, productTitle, productBrand, miss
       <Card>
         <CardHeader>
           <CardTitle>Cross-store coverage</CardTitle>
-          <CardDescription>This product is already linked to every competitor in your workspace.</CardDescription>
+          <CardDescription>
+            This product is already linked to every competitor in your workspace.
+          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -113,40 +128,47 @@ export function CrossStoreSearch({ myProductId, productTitle, productBrand, miss
               <Database className="h-5 w-5" /> Find this product in your scraped data
             </CardTitle>
             <CardDescription>
-              {stocked.length.toLocaleString()} store(s) without a confirmed match · searching across{' '}
-              {totalScraped.toLocaleString()} scraped products. Pure database lookup — no external network calls.
+              {stocked.length.toLocaleString()} store(s) without a confirmed match · searching
+              across {totalScraped.toLocaleString()} scraped products. Pure database lookup — no
+              external network calls.
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={findInDb} disabled={selected.size === 0 || scanning}>
-              {scanning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+              {scanning ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="mr-2 h-4 w-4" />
+              )}
               Find in my DB
             </Button>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-2 text-xs">
           <span>Looking for:</span>
-          <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono">
+          <code className="bg-muted rounded-md px-1.5 py-0.5 font-mono">
             {[productBrand, productTitle].filter(Boolean).join(' ')}
           </code>
         </div>
         {matchError ? (
-          <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <div className="border-destructive/40 bg-destructive/10 text-destructive mt-2 rounded-md border px-3 py-2 text-xs">
             {matchError}
           </div>
         ) : null}
         {scanError ? (
-          <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <div className="border-destructive/40 bg-destructive/10 text-destructive mt-2 rounded-md border px-3 py-2 text-xs">
             {scanError}
           </div>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div className="text-muted-foreground flex items-center justify-between text-xs">
           <button type="button" className="hover:underline" onClick={toggleAll}>
             {allSelected ? 'Clear selection' : 'Select all stores with data'}
           </button>
-          <span>{selected.size} of {stocked.length} selected</span>
+          <span>
+            {selected.size} of {stocked.length} selected
+          </span>
         </div>
 
         <ul className="grid gap-2">
@@ -154,7 +176,7 @@ export function CrossStoreSearch({ myProductId, productTitle, productBrand, miss
             const result = scanResults[store.storeId];
             const isSelected = selected.has(store.storeId);
             return (
-              <li key={store.storeId} className="rounded-md border bg-background">
+              <li key={store.storeId} className="bg-background rounded-md border">
                 <div className="flex flex-wrap items-center justify-between gap-3 p-3">
                   <label className="flex min-w-0 cursor-pointer items-center gap-3">
                     <input
@@ -173,7 +195,9 @@ export function CrossStoreSearch({ myProductId, productTitle, productBrand, miss
                           <Badge variant="warning">{store.status}</Badge>
                         ) : null}
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">{store.storeDomain ?? '—'}</div>
+                      <div className="text-muted-foreground truncate text-xs">
+                        {store.storeDomain ?? '—'}
+                      </div>
                     </div>
                   </label>
                   <div className="flex items-center gap-2">
@@ -191,15 +215,20 @@ export function CrossStoreSearch({ myProductId, productTitle, productBrand, miss
                 </div>
                 {result ? (
                   result.candidates.length === 0 ? (
-                    <div className="border-t bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                    <div className="bg-muted/20 text-muted-foreground border-t px-3 py-2 text-xs">
                       No similar products found in this store's scraped data.{' '}
-                      <a href={store.searchUrl} target="_blank" rel="noreferrer" className="text-foreground hover:underline">
+                      <a
+                        href={store.searchUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-foreground hover:underline"
+                      >
                         Open store search →
                       </a>
                     </div>
                   ) : (
-                    <div className="border-t bg-muted/10 px-3 py-2">
-                      <div className="mb-2 text-[11px] uppercase text-muted-foreground">
+                    <div className="bg-muted/10 border-t px-3 py-2">
+                      <div className="text-muted-foreground mb-2 text-[11px] uppercase">
                         Top {result.candidates.length} candidate(s) from your scraped data
                       </div>
                       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -222,16 +251,20 @@ export function CrossStoreSearch({ myProductId, productTitle, productBrand, miss
         </ul>
 
         {empty.length > 0 ? (
-          <details className="rounded-md border bg-background">
-            <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground">
-              {empty.length.toLocaleString()} store(s) without scraped data yet — expand for manual options
+          <details className="bg-background rounded-md border">
+            <summary className="text-muted-foreground cursor-pointer px-3 py-2 text-xs">
+              {empty.length.toLocaleString()} store(s) without scraped data yet — expand for manual
+              options
             </summary>
             <ul className="grid gap-1 border-t p-3 text-xs">
               {empty.map((store) => (
-                <li key={store.storeId} className="flex items-center justify-between gap-3 rounded border bg-muted/20 px-3 py-2">
+                <li
+                  key={store.storeId}
+                  className="bg-muted/20 flex items-center justify-between gap-3 rounded border px-3 py-2"
+                >
                   <div className="min-w-0">
                     <span className="font-medium">{store.storeName}</span>
-                    <span className="ml-2 text-muted-foreground">{store.storeDomain ?? ''}</span>
+                    <span className="text-muted-foreground ml-2">{store.storeDomain ?? ''}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <MatchByUrlForm
@@ -267,14 +300,8 @@ function CandidateCard({
   onMatch: () => void;
 }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border bg-background p-2">
-      {card.imageUrl ? (
-        <span
-          className="h-12 w-12 shrink-0 rounded border bg-muted bg-contain bg-center bg-no-repeat"
-          style={{ backgroundImage: `url("${card.imageUrl.replace(/"/g, '%22')}")` }}
-          aria-hidden="true"
-        />
-      ) : null}
+    <div className="bg-background flex items-start gap-2 rounded-md border p-2">
+      <ProductImage src={card.imageUrl} className="h-12 w-12" sizes="48px" />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-start justify-between gap-2">
           <a
@@ -287,14 +314,16 @@ function CandidateCard({
           </a>
           <MatchScoreBadge score={card.similarity} method={card.matchMethod} />
         </div>
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div className="text-muted-foreground flex items-center justify-between gap-2 text-xs">
           <span className="tabular-nums">{formatCurrency(card.price, card.currency ?? 'EUR')}</span>
           {card.availability ? <AvailabilityPill value={card.availability} /> : null}
         </div>
         {card.lastScrapedAt ? (
-          <div className="text-[10px] text-muted-foreground">scraped {timeAgo(card.lastScrapedAt)}</div>
+          <div className="text-muted-foreground text-[10px]">
+            scraped {timeAgo(card.lastScrapedAt)}
+          </div>
         ) : null}
-        <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+        <div className="text-muted-foreground flex flex-wrap gap-1 text-[10px]">
           {card.reasons.slice(0, 1).map((reason) => (
             <span key={reason}>{reason}</span>
           ))}
@@ -313,7 +342,13 @@ function CandidateCard({
   );
 }
 
-function MatchScoreBadge({ score, method }: { score: number; method: CrossStoreCandidate['matchMethod'] }) {
+function MatchScoreBadge({
+  score,
+  method,
+}: {
+  score: number;
+  method: CrossStoreCandidate['matchMethod'];
+}) {
   const pct = Math.round(score * 100);
   if (method === 'gtin') return <Badge variant="success">GTIN</Badge>;
   if (method === 'sku') return <Badge variant="success">SKU</Badge>;
@@ -365,8 +400,12 @@ function MatchByUrlForm({
         autoFocus
         name={`url-${storeId}`}
       />
-      <Button type="submit" size="sm" disabled={busy}>{busy ? '…' : 'Save'}</Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+      <Button type="submit" size="sm" disabled={busy}>
+        {busy ? '…' : 'Save'}
+      </Button>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+        Cancel
+      </Button>
     </form>
   );
 }

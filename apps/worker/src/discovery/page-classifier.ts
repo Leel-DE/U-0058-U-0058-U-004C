@@ -25,6 +25,9 @@ const EXPLICIT_CAPTCHA_MARKERS: RegExp[] = [
   /window\._cf_chl_opt\s*=/i,
   /<title>just a moment\.\.\.<\/title>/i,
   /<title>attention required![^<]*<\/title>/i,
+  /<h[1-6][^>]*>\s*performing security verification\s*<\/h[1-6]>/i,
+  /security service to protect against malicious bots/i,
+  /verifies you are not a bot/i,
 ];
 
 export function classifyDiscoveryPage(url: string, html: string): PageClassification {
@@ -92,4 +95,3 @@ export function pageTitleAndH1(html: string) {
     canonicalUrl: $('link[rel="canonical"]').attr('href') || undefined,
   };
 }
-

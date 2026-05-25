@@ -100,9 +100,21 @@ export async function getProductFilterOptions(orgId: string): Promise<ProductFil
   ]);
 
   return {
-    brands: brands.map((row) => ({ value: row.value ?? 'Unknown', label: row.label ?? 'Unknown', count: Number(row.count) })),
-    categories: categories.map((row) => ({ value: row.value ?? '', label: row.label ?? 'Uncategorized', count: Number(row.count) })),
-    competitors: competitors.map((row) => ({ value: row.value ?? '', label: row.label ?? 'Unknown', count: Number(row.count) })),
+    brands: brands.map((row) => ({
+      value: row.value ?? 'Unknown',
+      label: row.label ?? 'Unknown',
+      count: Number(row.count),
+    })),
+    categories: categories.map((row) => ({
+      value: row.value ?? '',
+      label: row.label ?? 'Uncategorized',
+      count: Number(row.count),
+    })),
+    competitors: competitors.map((row) => ({
+      value: row.value ?? '',
+      label: row.label ?? 'Unknown',
+      count: Number(row.count),
+    })),
   };
 }
 
@@ -111,7 +123,11 @@ export async function getProductIntelligenceList(
   filters: ProductIntelligenceFilters,
 ): Promise<ProductIntelligenceList> {
   const offset = (filters.page - 1) * filters.pageSize;
-  const rows = await db().execute<EntityRow>(entitiesQuery(orgId, filters, sql`
+  const rows = await db().execute<EntityRow>(
+    entitiesQuery(
+      orgId,
+      filters,
+      sql`
     select *, count(*) over()::int as total_count
     from filtered_entities
     order by
@@ -124,7 +140,9 @@ export async function getProductIntelligenceList(
       discovered_at desc nulls last
     limit ${filters.pageSize}
     offset ${offset}
-  `));
+  `,
+    ),
+  );
 
   const mapped = rows.map(mapEntityRow);
   return {
@@ -138,18 +156,24 @@ export async function getProductIntelligenceList(
 }
 
 export async function getProductDetail(orgId: string, id: string): Promise<ProductDetail | null> {
-  const [header] = await db().execute<EntityRow>(entitiesQuery(orgId, {
-    groupBy: 'none',
-    sort: 'updated_desc',
-    page: 1,
-    pageSize: 1,
-    specs: {},
-  }, sql`
+  const [header] = await db().execute<EntityRow>(
+    entitiesQuery(
+      orgId,
+      {
+        groupBy: 'none',
+        sort: 'updated_desc',
+        page: 1,
+        pageSize: 1,
+        specs: {},
+      },
+      sql`
     select *, 1::int as total_count
     from filtered_entities
     where id = ${id}
     limit 1
-  `));
+  `,
+    ),
+  );
 
   if (!header) return null;
   const entity = mapEntityRow(header);
@@ -163,13 +187,21 @@ export async function getProductDetail(orgId: string, id: string): Promise<Produ
 
   const spread = buildSpreadTimeline(timeline);
   const events = buildProductEvents(timeline, competitors);
-  const prices = competitors.map((row) => row.currentPrice).filter((price): price is number => price != null);
+  const imageUrl =
+    normalizeImageUrl(entity.imageUrl, identifiersAndOwn.url) ??
+    competitors.find((row) => row.imageUrl)?.imageUrl ??
+    null;
+  const prices = competitors
+    .map((row) => row.currentPrice)
+    .filter((price): price is number => price != null);
   const highestPrice = prices.length > 0 ? Math.max(...prices) : null;
   const minPrice = prices.length > 0 ? Math.min(...prices) : null;
   const cheapest = competitors
     .filter((row) => row.currentPrice != null)
     .sort((a, b) => Number(a.currentPrice) - Number(b.currentPrice))[0];
-  const activeDiscounts = competitors.map((row) => row.discountPct).filter((value): value is number => value != null);
+  const activeDiscounts = competitors
+    .map((row) => row.discountPct)
+    .filter((value): value is number => value != null);
   const inStockCount = competitors.filter((row) => row.availability === 'in_stock').length;
   const outOfStockCount = competitors.filter((row) => row.availability === 'out_of_stock').length;
 
@@ -180,14 +212,19 @@ export async function getProductDetail(orgId: string, id: string): Promise<Produ
       : null;
   const spreadPct =
     entity.currentMinPrice != null && entity.currentMaxPrice != null && entity.currentMaxPrice > 0
-      ? Number((((entity.currentMaxPrice - entity.currentMinPrice) / entity.currentMaxPrice) * 100).toFixed(1))
+      ? Number(
+          (
+            ((entity.currentMaxPrice - entity.currentMinPrice) / entity.currentMaxPrice) *
+            100
+          ).toFixed(1),
+        )
       : null;
 
   return {
     id: entity.id,
     entityType: entity.entityType,
     canonicalTitle: entity.canonicalTitle,
-    imageUrl: entity.imageUrl,
+    imageUrl,
     brand: entity.brand,
     category: entity.category,
     specs: extractProductSpecs(entity.canonicalTitle, entity.brand),
@@ -310,7 +347,14 @@ async function getProductIdentifiers(
 
 function emptyIdentifierBundle(): IdentifierBundle {
   return {
-    identifiers: { brand: null, sku: null, gtin: null, competitorSkus: [], competitorGtins: [], competitorTitles: [] },
+    identifiers: {
+      brand: null,
+      sku: null,
+      gtin: null,
+      competitorSkus: [],
+      competitorGtins: [],
+      competitorTitles: [],
+    },
     url: null,
     myPrice: null,
   };
@@ -334,8 +378,9 @@ async function getMissingFromStores(
   title: string,
   brand: string | null,
 ): Promise<ProductMissingStore[]> {
-  const matchedStoresExpr = entityType === 'normalized'
-    ? sql`
+  const matchedStoresExpr =
+    entityType === 'normalized'
+      ? sql`
         select distinct cp.store_id
         from product_matches pm
         join competitor_products cp on cp.id = pm.competitor_product_id
@@ -343,7 +388,7 @@ async function getMissingFromStores(
           and pm.my_product_id = ${id}
           and pm.status = 'confirmed'
       `
-    : sql`
+      : sql`
         select store_id
         from competitor_products
         where org_id = ${orgId} and id = ${id}
@@ -420,18 +465,23 @@ export async function findCrossStoreCandidates(
 ): Promise<Record<string, CrossStoreCandidate[]>> {
   const perStoreLimit = options.perStoreLimit ?? 6;
   const minSimilarity = options.minSimilarity ?? 0.2;
-  const storeFilter = options.storeIds && options.storeIds.length > 0
-    ? sql`and st.id = any(${options.storeIds}::uuid[])`
-    : sql``;
+  const storeFilter =
+    options.storeIds && options.storeIds.length > 0
+      ? sql`and st.id in (${sql.join(
+          options.storeIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`
+      : sql``;
 
-  const sourceCte = entityType === 'normalized'
-    ? sql`
+  const sourceCte =
+    entityType === 'normalized'
+      ? sql`
         select id::text as id, name as title, brand, sku, gtin
         from my_products
         where org_id = ${orgId} and id = ${id}
         limit 1
       `
-    : sql`
+      : sql`
         select id::text as id, coalesce(title, url) as title, brand, sku, gtin
         from competitor_products
         where org_id = ${orgId} and id = ${id}
@@ -450,7 +500,7 @@ export async function findCrossStoreCandidates(
         st.domain as store_domain,
         coalesce(cp.title, cp.url) as title,
         cp.url,
-        cp.image_url,
+        coalesce(nullif(cp.image_url, ''), nullif(latest.image_url, '')) as image_url,
         cp.brand,
         cp.sku,
         cp.gtin,
@@ -466,6 +516,14 @@ export async function findCrossStoreCandidates(
       from competitor_products cp
       join stores st on st.id = cp.store_id
       cross join src
+      left join lateral (
+        select ps.image_url
+        from price_snapshots ps
+        where ps.competitor_product_id = cp.id
+          and ps.org_id = ${orgId}
+        order by ps.scraped_at desc
+        limit 1
+      ) latest on true
       where cp.org_id = ${orgId}
         ${storeFilter}
         and not exists (
@@ -539,7 +597,7 @@ function mapCrossStoreCandidate(row: CrossStoreCandidateRow): CrossStoreCandidat
     storeDomain: row.store_domain,
     title: row.title,
     url: row.url,
-    imageUrl: row.image_url,
+    imageUrl: normalizeImageUrl(row.image_url, row.url),
     brand: row.brand,
     sku: row.sku,
     gtin: row.gtin,
@@ -559,13 +617,24 @@ function computePriceStats(timeline: ProductDetailPoint[]): ProductPriceStats {
     .map((point) => point.price)
     .filter((value): value is number => value != null);
   if (prices.length === 0) {
-    return { median: null, best30d: null, worst30d: null, best90d: null, worst90d: null, cheapestStreakDays: null };
+    return {
+      median: null,
+      best30d: null,
+      worst30d: null,
+      best90d: null,
+      worst90d: null,
+      cheapestStreakDays: null,
+    };
   }
   const sorted = [...prices].sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)] ?? null;
   const now = Date.now();
-  const in30 = timeline.filter((point) => point.price != null && now - new Date(point.date).getTime() <= 30 * 86_400_000);
-  const in90 = timeline.filter((point) => point.price != null && now - new Date(point.date).getTime() <= 90 * 86_400_000);
+  const in30 = timeline.filter(
+    (point) => point.price != null && now - new Date(point.date).getTime() <= 30 * 86_400_000,
+  );
+  const in90 = timeline.filter(
+    (point) => point.price != null && now - new Date(point.date).getTime() <= 90 * 86_400_000,
+  );
   const best30d = in30.length > 0 ? Math.min(...in30.map((p) => p.price as number)) : null;
   const worst30d = in30.length > 0 ? Math.max(...in30.map((p) => p.price as number)) : null;
   const best90d = in90.length > 0 ? Math.min(...in90.map((p) => p.price as number)) : null;
@@ -620,7 +689,13 @@ export async function getCompareProducts(orgId: string, ids: string[]): Promise<
 }
 
 export async function getProductInsights(orgId: string): Promise<ProductInsight[]> {
-  const filters: ProductIntelligenceFilters = { groupBy: 'none', sort: 'volatility_desc', page: 1, pageSize: 100, specs: {} };
+  const filters: ProductIntelligenceFilters = {
+    groupBy: 'none',
+    sort: 'volatility_desc',
+    page: 1,
+    pageSize: 100,
+    specs: {},
+  };
   const data = await getProductIntelligenceList(orgId, filters);
   const rows = data.rows;
   const insights: ProductInsight[] = [];
@@ -669,7 +744,9 @@ export async function getProductInsights(orgId: string): Promise<ProductInsight[
       href: `/products/${row.id}`,
     });
   }
-  for (const row of rows.filter((item) => item.stockStatus === 'out_of_stock' || item.stockStatus === 'mixed').slice(0, 8)) {
+  for (const row of rows
+    .filter((item) => item.stockStatus === 'out_of_stock' || item.stockStatus === 'mixed')
+    .slice(0, 8)) {
     insights.push({
       id: `stock-${row.id}`,
       type: 'stock_recovery_or_disappearing',
@@ -684,7 +761,10 @@ export async function getProductInsights(orgId: string): Promise<ProductInsight[
   return insights.slice(0, 32);
 }
 
-export async function getCategoryAnalytics(orgId: string, categoryIdOrName: string): Promise<ProductAnalyticsPageData> {
+export async function getCategoryAnalytics(
+  orgId: string,
+  categoryIdOrName: string,
+): Promise<ProductAnalyticsPageData> {
   const filters: ProductIntelligenceFilters = {
     category: categoryIdOrName,
     groupBy: 'brand',
@@ -703,7 +783,10 @@ export async function getCategoryAnalytics(orgId: string, categoryIdOrName: stri
   };
 }
 
-export async function getBrandAnalytics(orgId: string, brand: string): Promise<ProductAnalyticsPageData> {
+export async function getBrandAnalytics(
+  orgId: string,
+  brand: string,
+): Promise<ProductAnalyticsPageData> {
   const filters: ProductIntelligenceFilters = {
     brand,
     groupBy: 'category',
@@ -721,7 +804,11 @@ export async function getBrandAnalytics(orgId: string, brand: string): Promise<P
   };
 }
 
-function entitiesQuery(orgId: string, filters: ProductIntelligenceFilters, finalSelect: ReturnType<typeof sql>) {
+function entitiesQuery(
+  orgId: string,
+  filters: ProductIntelligenceFilters,
+  finalSelect: ReturnType<typeof sql>,
+) {
   const query = filters.search ? `%${filters.search.toLowerCase()}%` : null;
   const brand = filters.brand ? filters.brand.toLowerCase() : null;
   const category = filters.category ?? null;
@@ -743,6 +830,7 @@ function entitiesQuery(orgId: string, filters: ProductIntelligenceFilters, final
         ps.currency,
         ps.availability,
         ps.shipping_text,
+        ps.image_url,
         ps.rating::numeric as rating,
         ps.confidence::numeric as confidence,
         ps.source::text as source,
@@ -825,7 +913,10 @@ function entitiesQuery(orgId: string, filters: ProductIntelligenceFilters, final
         mp.name as canonical_title,
         mp.brand,
         c.name as category,
-        coalesce(mp.image_url, (array_agg(cp.image_url) filter (where cp.image_url is not null))[1]) as image_url,
+        coalesce(
+          nullif(mp.image_url, ''),
+          (array_agg(coalesce(nullif(cp.image_url, ''), nullif(ls.image_url, ''))) filter (where coalesce(nullif(cp.image_url, ''), nullif(ls.image_url, '')) is not null))[1]
+        ) as image_url,
         count(distinct cp.id)::int as competitors_count,
         min(coalesce(ls.price, cp.last_snapshot_price::numeric)) as current_min_price,
         avg(coalesce(ls.price, cp.last_snapshot_price::numeric))::numeric(12,2) as current_avg_price,
@@ -862,7 +953,7 @@ function entitiesQuery(orgId: string, filters: ProductIntelligenceFilters, final
             'storeName', (select s2.name from stores s2 where s2.id = cp.store_id),
             'title', coalesce(cp.title, cp.url),
             'url', cp.url,
-            'imageUrl', cp.image_url,
+            'imageUrl', coalesce(nullif(cp.image_url, ''), nullif(ls.image_url, '')),
             'price', coalesce(ls.price, cp.last_snapshot_price::numeric),
             'oldPrice', ls.old_price,
             'currency', coalesce(ls.currency, cp.last_snapshot_currency, mp.currency, 'EUR'),
@@ -893,7 +984,7 @@ function entitiesQuery(orgId: string, filters: ProductIntelligenceFilters, final
         coalesce(cp.title, cp.url) as canonical_title,
         cp.brand,
         null::text as category,
-        cp.image_url,
+        coalesce(nullif(cp.image_url, ''), nullif(ls.image_url, '')) as image_url,
         1::int as competitors_count,
         coalesce(ls.price, cp.last_snapshot_price::numeric) as current_min_price,
         coalesce(ls.price, cp.last_snapshot_price::numeric) as current_avg_price,
@@ -924,7 +1015,7 @@ function entitiesQuery(orgId: string, filters: ProductIntelligenceFilters, final
           'storeName', st.name,
           'title', coalesce(cp.title, cp.url),
           'url', cp.url,
-          'imageUrl', cp.image_url,
+          'imageUrl', coalesce(nullif(cp.image_url, ''), nullif(ls.image_url, '')),
           'price', coalesce(ls.price, cp.last_snapshot_price::numeric),
           'oldPrice', ls.old_price,
           'currency', coalesce(ls.currency, cp.last_snapshot_currency, 'EUR'),
@@ -1005,8 +1096,9 @@ async function getProductCompetitors(
 ): Promise<ProductCompetitorComparison[]> {
   const rows = await db().execute<ProductCompetitorComparisonRow>(sql`
     with entity_competitors as (
-      ${entityType === 'normalized'
-        ? sql`
+      ${
+        entityType === 'normalized'
+          ? sql`
           select cp.*
           from product_matches pm
           join competitor_products cp on cp.id = pm.competitor_product_id
@@ -1014,12 +1106,13 @@ async function getProductCompetitors(
             and pm.status = 'confirmed'
             and pm.my_product_id = ${id}
         `
-        : sql`
+          : sql`
           select cp.*
           from competitor_products cp
           where cp.org_id = ${orgId}
             and cp.id = ${id}
-        `}
+        `
+      }
     ),
     latest_snapshot as (
       select distinct on (ps.competitor_product_id)
@@ -1029,6 +1122,7 @@ async function getProductCompetitors(
         ps.currency,
         ps.availability,
         ps.shipping_text,
+        ps.image_url,
         ps.rating::numeric as rating,
         ps.confidence::numeric as confidence,
         ps.source::text as source,
@@ -1045,7 +1139,7 @@ async function getProductCompetitors(
       st.domain as competitor_domain,
       coalesce(cp.title, cp.url) as title,
       cp.url,
-      cp.image_url,
+      coalesce(nullif(cp.image_url, ''), nullif(ls.image_url, '')) as image_url,
       cp.sku,
       cp.gtin,
       coalesce(ls.price, cp.last_snapshot_price::numeric) as current_price,
@@ -1094,7 +1188,7 @@ async function getProductCompetitors(
       source: row.source,
       sku: row.sku,
       gtin: row.gtin,
-      imageUrl: row.image_url,
+      imageUrl: normalizeImageUrl(row.image_url, row.url),
       pricePositionPct,
     };
   });
@@ -1128,8 +1222,9 @@ async function getProductTimeline(
 ): Promise<ProductDetailPoint[]> {
   const rows = await db().execute<ProductTimelineRow>(sql`
     with entity_competitors as (
-      ${entityType === 'normalized'
-        ? sql`
+      ${
+        entityType === 'normalized'
+          ? sql`
           select cp.*
           from product_matches pm
           join competitor_products cp on cp.id = pm.competitor_product_id
@@ -1137,12 +1232,13 @@ async function getProductTimeline(
             and pm.status = 'confirmed'
             and pm.my_product_id = ${id}
         `
-        : sql`
+          : sql`
           select cp.*
           from competitor_products cp
           where cp.org_id = ${orgId}
             and cp.id = ${id}
-        `}
+        `
+      }
     )
     select
       ps.scraped_at::text as date,
@@ -1204,7 +1300,7 @@ function mapEntityRow(row: EntityRow): ProductIntelligenceRow {
     canonicalTitle: row.canonical_title ?? 'Untitled product',
     brand: row.brand,
     category: row.category,
-    imageUrl: row.image_url,
+    imageUrl: normalizeImageUrl(row.image_url, null),
     competitorsCount: Number(row.competitors_count ?? 0),
     currentMinPrice: min,
     currentAvgPrice: avg,
@@ -1246,7 +1342,8 @@ function parseMembers(value: unknown): ProductStoreMember[] {
       if (!item || typeof item !== 'object') return null;
       const m = item as Record<string, unknown>;
       const storeId = typeof m.storeId === 'string' ? m.storeId : null;
-      const competitorProductId = typeof m.competitorProductId === 'string' ? m.competitorProductId : null;
+      const competitorProductId =
+        typeof m.competitorProductId === 'string' ? m.competitorProductId : null;
       if (!storeId || !competitorProductId) return null;
       return {
         competitorProductId,
@@ -1254,7 +1351,10 @@ function parseMembers(value: unknown): ProductStoreMember[] {
         storeName: typeof m.storeName === 'string' ? m.storeName : 'Unknown store',
         title: typeof m.title === 'string' ? m.title : 'Untitled',
         url: typeof m.url === 'string' ? m.url : '',
-        imageUrl: typeof m.imageUrl === 'string' ? m.imageUrl : null,
+        imageUrl: normalizeImageUrl(
+          typeof m.imageUrl === 'string' ? m.imageUrl : null,
+          typeof m.url === 'string' ? m.url : null,
+        ),
         price: numberOrNull(m.price),
         oldPrice: numberOrNull(m.oldPrice),
         currency: typeof m.currency === 'string' ? m.currency : 'EUR',
@@ -1263,6 +1363,22 @@ function parseMembers(value: unknown): ProductStoreMember[] {
       } satisfies ProductStoreMember;
     })
     .filter((item): item is ProductStoreMember => item !== null);
+}
+
+function normalizeImageUrl(value: string | null, baseUrl: string | null): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('//')) return `https:${trimmed}`;
+  try {
+    return new URL(trimmed).href;
+  } catch {
+    if (!baseUrl) return null;
+    try {
+      return new URL(trimmed, baseUrl).href;
+    } catch {
+      return null;
+    }
+  }
 }
 
 function buildClusters(rows: ProductIntelligenceRow[]): ProductCluster[] {
@@ -1276,30 +1392,37 @@ function buildClusters(rows: ProductIntelligenceRow[]): ProductCluster[] {
   const clusters: ProductCluster[] = [];
   for (const [key, group] of map.entries()) {
     if (group.length === 0) continue;
-    const representative = pickRepresentative(group as [ProductIntelligenceRow, ...ProductIntelligenceRow[]]);
+    const representative = pickRepresentative(
+      group as [ProductIntelligenceRow, ...ProductIntelligenceRow[]],
+    );
     const allMembers = group.flatMap((row) => row.members);
     const deduped = dedupeMembers(allMembers);
     const prices = deduped.map((m) => m.price).filter((p): p is number => p != null);
     const minPrice = prices.length > 0 ? Math.min(...prices) : null;
     const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
-    const avgPrice = prices.length > 0 ? Number((prices.reduce((s, p) => s + p, 0) / prices.length).toFixed(2)) : null;
+    const avgPrice =
+      prices.length > 0
+        ? Number((prices.reduce((s, p) => s + p, 0) / prices.length).toFixed(2))
+        : null;
     const cheapestMember = deduped
       .filter((m) => m.price != null)
       .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))[0];
     const highestMember = deduped
       .filter((m) => m.price != null)
       .sort((a, b) => (b.price ?? 0) - (a.price ?? 0))[0];
-    const savingsPct = minPrice != null && maxPrice != null && maxPrice > 0 && maxPrice !== minPrice
-      ? Number((((maxPrice - minPrice) / maxPrice) * 100).toFixed(1))
-      : null;
+    const savingsPct =
+      minPrice != null && maxPrice != null && maxPrice > 0 && maxPrice !== minPrice
+        ? Number((((maxPrice - minPrice) / maxPrice) * 100).toFixed(1))
+        : null;
     const inStockStores = deduped.filter((m) => m.availability === 'in_stock').length;
     const outOfStockStores = deduped.filter((m) => m.availability === 'out_of_stock').length;
     const uniqueStores = new Set(deduped.map((m) => m.storeId)).size;
-    const lastChange = group
-      .map((row) => row.lastChange)
-      .filter((value): value is string => Boolean(value))
-      .sort()
-      .reverse()[0] ?? null;
+    const lastChange =
+      group
+        .map((row) => row.lastChange)
+        .filter((value): value is string => Boolean(value))
+        .sort()
+        .reverse()[0] ?? null;
     clusters.push({
       key,
       representative,
@@ -1324,12 +1447,14 @@ function buildClusters(rows: ProductIntelligenceRow[]): ProductCluster[] {
   });
 }
 
-function pickRepresentative(rows: [ProductIntelligenceRow, ...ProductIntelligenceRow[]]): ProductIntelligenceRow {
+function pickRepresentative(
+  rows: [ProductIntelligenceRow, ...ProductIntelligenceRow[]],
+): ProductIntelligenceRow {
   const normalized = rows.find((row) => row.entityType === 'normalized');
   if (normalized) return normalized;
   const sorted = rows
     .slice()
-    .sort((a, b) => b.competitorsCount - a.competitorsCount || (b.confidence - a.confidence));
+    .sort((a, b) => b.competitorsCount - a.competitorsCount || b.confidence - a.confidence);
   return sorted[0] ?? rows[0];
 }
 
@@ -1366,13 +1491,22 @@ function buildGroups(rows: ProductIntelligenceRow[], groupBy: string): ProductGr
   }
   return Array.from(map.entries())
     .map(([key, group]) => {
-      const prices = group.map((row) => row.currentAvgPrice).filter((price): price is number => price != null);
+      const prices = group
+        .map((row) => row.currentAvgPrice)
+        .filter((price): price is number => price != null);
       return {
         key,
         label: key,
         count: group.length,
-        avgPrice: prices.length > 0 ? Number((prices.reduce((sum, price) => sum + price, 0) / prices.length).toFixed(2)) : null,
-        volatility: Number((group.reduce((sum, row) => sum + row.volatility, 0) / Math.max(1, group.length)).toFixed(1)),
+        avgPrice:
+          prices.length > 0
+            ? Number((prices.reduce((sum, price) => sum + price, 0) / prices.length).toFixed(2))
+            : null,
+        volatility: Number(
+          (group.reduce((sum, row) => sum + row.volatility, 0) / Math.max(1, group.length)).toFixed(
+            1,
+          ),
+        ),
       };
     })
     .sort((a, b) => b.count - a.count);
@@ -1382,10 +1516,16 @@ function groupKey(row: ProductIntelligenceRow, groupBy: string): string {
   if (groupBy === 'brand') return row.brand ?? 'Unknown brand';
   if (groupBy === 'category') return row.category ?? 'Uncategorized';
   if (groupBy === 'stock') return row.stockStatus.replace(/_/g, ' ');
-  if (groupBy === 'volatility') return row.volatility >= 20 ? 'high volatility' : row.volatility >= 8 ? 'medium volatility' : 'low volatility';
+  if (groupBy === 'volatility')
+    return row.volatility >= 20
+      ? 'high volatility'
+      : row.volatility >= 8
+        ? 'medium volatility'
+        : 'low volatility';
   if (groupBy === 'discount') return row.activeDiscounts > 0 ? 'discounted' : 'not discounted';
   if (groupBy === 'price_range') return priceRangeLabel(row.currentAvgPrice);
-  if (groupBy === 'competitor') return row.competitorsCount > 1 ? 'multi competitor' : 'single competitor';
+  if (groupBy === 'competitor')
+    return row.competitorsCount > 1 ? 'multi competitor' : 'single competitor';
   return 'all';
 }
 
@@ -1406,7 +1546,10 @@ function buildSpreadTimeline(points: ProductDetailPoint[]): ProductSpreadPoint[]
   }));
 }
 
-function buildProductEvents(points: ProductDetailPoint[], competitors: ProductCompetitorComparison[]): ProductEvent[] {
+function buildProductEvents(
+  points: ProductDetailPoint[],
+  competitors: ProductCompetitorComparison[],
+): ProductEvent[] {
   const events: ProductEvent[] = [];
   const previousByCompetitor = new Map<string, ProductDetailPoint>();
   for (const point of points) {
@@ -1420,7 +1563,11 @@ function buildProductEvents(points: ProductDetailPoint[], competitors: ProductCo
         status: point.price < previous.price ? 'success' : 'warning',
       });
     }
-    if (previous?.availability && point.availability && previous.availability !== point.availability) {
+    if (
+      previous?.availability &&
+      point.availability &&
+      previous.availability !== point.availability
+    ) {
       events.push({
         id: `stock-${point.competitorProductId}-${point.date}`,
         type: 'stock_changed',
@@ -1449,7 +1596,9 @@ function buildProductEvents(points: ProductDetailPoint[], competitors: ProductCo
       status: competitor.currentPrice == null ? 'warning' : 'neutral',
     });
   }
-  return events.sort((a, b) => new Date(b.timestamp ?? 0).getTime() - new Date(a.timestamp ?? 0).getTime()).slice(0, 80);
+  return events
+    .sort((a, b) => new Date(b.timestamp ?? 0).getTime() - new Date(a.timestamp ?? 0).getTime())
+    .slice(0, 80);
 }
 
 function parseSparkline(value: unknown): ProductSparkPoint[] {

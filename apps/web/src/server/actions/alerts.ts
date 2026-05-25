@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { schemas } from '@cr/shared';
 import { db, schema } from '@/lib/db';
@@ -80,7 +80,7 @@ export const markNotificationsRead = defineAction(
         and(
           eq(schema.notifications.userId, ctx.user.id),
           eq(schema.notifications.orgId, ctx.orgId),
-          sql`id = ANY(${ids})`,
+          inArray(schema.notifications.id, ids),
         ),
       );
     revalidatePath('/alerts');

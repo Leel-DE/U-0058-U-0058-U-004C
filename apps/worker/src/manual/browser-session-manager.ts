@@ -152,6 +152,51 @@ function structuredLog(event: string, extra: Record<string, unknown>): void {
   logger.info({ event, ...extra }, event);
 }
 
+type StoredOrigin = {
+  origin: string;
+  localStorage?: Array<{ name: string; value: string }>;
+};
+
+type StoredBrowserState = {
+  cookies?: Parameters<BrowserContext['addCookies']>[0];
+  origins?: StoredOrigin[];
+};
+
+async function hydrateContextStorage(
+  context: BrowserContext,
+  storageStateJson: string,
+  session: InternalSession,
+  label: string,
+): Promise<void> {
+  try {
+    const parsed = JSON.parse(storageStateJson) as StoredBrowserState;
+    const cookies = parsed.cookies ?? [];
+    if (cookies.length) await context.addCookies(cookies);
+
+    const origins = (parsed.origins ?? []).filter((origin) => origin.localStorage?.length);
+    const localStorageCount = origins.reduce((sum, origin) => sum + (origin.localStorage?.length ?? 0), 0);
+    if (origins.length) {
+      await context.addInitScript((storedOrigins: StoredOrigin[]) => {
+        try {
+          const match = storedOrigins.find((origin) => origin.origin === window.location.origin);
+          if (!match) return;
+          for (const entry of match.localStorage ?? []) {
+            window.localStorage.setItem(entry.name, entry.value);
+          }
+        } catch {
+          // Best-effort hydration only.
+        }
+      }, origins);
+    }
+
+    if (cookies.length || localStorageCount) {
+      log(session, `hydrated ${cookies.length} cookies and ${localStorageCount} localStorage entries from ${label}`);
+    }
+  } catch (err) {
+    log(session, `storage_hydrate_failed: ${(err as Error).message}`);
+  }
+}
+
 function viewOf(session: InternalSession): SessionView {
   const now = Date.now();
   const decision = decideAutoClose({
@@ -395,18 +440,10 @@ export async function start(opts: StartOpts): Promise<SessionView> {
     session.context = context;
     session.page = context.pages()[0] ?? (await context.newPage());
 
-    // If we saved state for this domain previously, hydrate cookies.
+    // If we saved state for this domain previously, hydrate domain storage.
     const cached = domainStorage.get(domain);
     if (cached) {
-      try {
-        const parsed = JSON.parse(cached.storageState) as { cookies?: Parameters<BrowserContext['addCookies']>[0] };
-        if (parsed.cookies?.length) {
-          await context.addCookies(parsed.cookies);
-          log(session, `hydrated ${parsed.cookies.length} cookies from cached storage state for ${domain}`);
-        }
-      } catch (err) {
-        log(session, `storage_hydrate_failed: ${(err as Error).message}`);
-      }
+      await hydrateContextStorage(context, cached.storageState, session, `cached storage state for ${domain}`);
     }
 
     context.on('close', () => {
@@ -648,12 +685,7 @@ export async function reopen(id: string): Promise<SessionView | null> {
     s.page = context.pages()[0] ?? (await context.newPage());
 
     if (s.storageStateJson) {
-      try {
-        const parsed = JSON.parse(s.storageStateJson) as { cookies?: Parameters<BrowserContext['addCookies']>[0] };
-        if (parsed.cookies?.length) await context.addCookies(parsed.cookies);
-      } catch {
-        // ignore
-      }
+      await hydrateContextStorage(context, s.storageStateJson, s, 'previous session state');
     }
 
     s.closedAt = null;

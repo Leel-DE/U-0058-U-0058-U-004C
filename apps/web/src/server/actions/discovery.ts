@@ -317,6 +317,7 @@ function discoveryControl(path: string) {
 
 export const pauseSiteDiscovery = discoveryControl('pause');
 export const resumeSiteDiscovery = discoveryControl('resume');
+export const skipCurrentDiscoveryProduct = discoveryControl('skip-current');
 export const cancelSiteDiscovery = discoveryControl('cancel');
 
 export const getSiteDiscoveryLogs = defineAction(

@@ -4,7 +4,9 @@ import { LoginForm } from './login-form';
 
 export const metadata = { title: 'Sign in — Competitor Radar' };
 
-export default function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const params = await searchParams;
+
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
@@ -12,7 +14,7 @@ export default function LoginPage({ searchParams }: { searchParams: Promise<{ ne
         <CardDescription>Sign in to your Competitor Radar account.</CardDescription>
       </CardHeader>
       <CardContent>
-        <LoginForm searchParamsPromise={searchParams} />
+        <LoginForm searchParams={params} />
         <p className="mt-4 text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{' '}
           <Link href="/signup" className="font-medium text-primary hover:underline">

@@ -23,6 +23,7 @@ export const discoveryStartSchema = z.object({
   concurrency: z.number().int().min(1).max(3).default(1),
   mode: z.enum(['category_scan', 'detail_enrichment']).default('category_scan'),
   respectRobotsTxt: z.boolean().default(true),
+  jsRequired: z.boolean().default(false),
   useAi: z.boolean().default(false),
   useManualCaptcha: z.boolean().default(true),
   includePatterns: patternList.default([]),

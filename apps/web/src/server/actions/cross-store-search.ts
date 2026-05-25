@@ -62,12 +62,59 @@ export const matchProductByUrl = defineAction(
     if (!store) throw new Error('Store not found');
     const rules = storeRow[0]?.rules ?? null;
 
-    const myProduct = await db()
+    let myProduct = await db()
       .select({ id: schema.myProducts.id })
       .from(schema.myProducts)
       .where(and(eq(schema.myProducts.id, input.myProductId), eq(schema.myProducts.orgId, ctx.orgId)))
       .limit(1);
-    if (!myProduct[0]) throw new Error('Your product was not found');
+
+    if (!myProduct[0]) {
+      const compProduct = await db()
+        .select()
+        .from(schema.competitorProducts)
+        .where(and(eq(schema.competitorProducts.id, input.myProductId), eq(schema.competitorProducts.orgId, ctx.orgId)))
+        .limit(1);
+      
+      if (!compProduct[0]) {
+        throw new Error('Your product was not found');
+      }
+
+      const p = compProduct[0];
+      const [newMyProduct] = await db()
+        .insert(schema.myProducts)
+        .values({
+          id: p.id,
+          orgId: ctx.orgId,
+          sku: p.sku ?? p.id,
+          gtin: p.gtin,
+          brand: p.brand,
+          name: p.title || p.url,
+          currency: p.lastSnapshotCurrency || 'EUR',
+          imageUrl: p.imageUrl,
+        })
+        .returning({ id: schema.myProducts.id });
+
+      if (!newMyProduct) {
+        throw new Error('Failed to auto-create normalized product');
+      }
+      
+      myProduct = [newMyProduct];
+
+      // Auto-match the competitor product to the newly created normalized product
+      await db()
+        .insert(schema.productMatches)
+        .values({
+          orgId: ctx.orgId,
+          myProductId: p.id,
+          competitorProductId: p.id,
+          method: 'manual',
+          confidence: '1.000',
+          status: 'confirmed',
+          decidedAt: new Date(),
+          decidedBy: ctx.user.id,
+        })
+        .onConflictDoNothing();
+    }
 
     let scrape: ScrapeResult | null = null;
     try {

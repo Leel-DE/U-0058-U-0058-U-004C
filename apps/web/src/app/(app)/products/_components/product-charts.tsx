@@ -16,17 +16,47 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { ProductDetailPoint, ProductSpreadPoint, ProductSparkPoint } from '@/server/products/types';
+import {
+  chartAxisTick,
+  chartCursorStyle,
+  chartGridStroke,
+  chartLegendStyle,
+  chartTooltipItemStyle,
+  chartTooltipLabelStyle,
+  chartTooltipStyle,
+} from '@/components/analytics/chart-theme';
+import type {
+  ProductDetailPoint,
+  ProductSpreadPoint,
+  ProductSparkPoint,
+} from '@/server/products/types';
 
-const COLORS = ['#3b82f6', '#22c55e', '#f97316', '#e11d48', '#a855f7', '#14b8a6', '#f59e0b', '#64748b'];
+const COLORS = [
+  '#3b82f6',
+  '#22c55e',
+  '#f97316',
+  '#e11d48',
+  '#a855f7',
+  '#14b8a6',
+  '#f59e0b',
+  '#64748b',
+];
+const chartMargin = { top: 8, right: 16, bottom: 6, left: 0 };
 
 export function ProductSparkline({ data }: { data: ProductSparkPoint[] }) {
-  if (data.length < 2) return <div className="h-8 text-xs text-muted-foreground">no trend</div>;
+  if (data.length < 2) return <div className="text-muted-foreground h-8 text-xs">no trend</div>;
   return (
     <div className="h-8 w-28">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
-          <Line type="monotone" dataKey="price" stroke="#3b82f6" strokeWidth={1.8} dot={false} isAnimationActive={false} />
+          <Line
+            type="monotone"
+            dataKey="price"
+            stroke="#3b82f6"
+            strokeWidth={1.8}
+            dot={false}
+            isAnimationActive={false}
+          />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -39,12 +69,23 @@ export function ProductPriceTimeline({ data }: { data: ProductDetailPoint[] }) {
   return (
     <div className="h-80">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
-          <XAxis dataKey="date" minTickGap={28} />
-          <YAxis width={72} />
-          <Tooltip />
-          <Legend />
+        <LineChart data={chartData} margin={chartMargin}>
+          <CartesianGrid stroke={chartGridStroke} strokeDasharray="3 3" opacity={0.55} />
+          <XAxis
+            dataKey="date"
+            minTickGap={28}
+            tick={chartAxisTick}
+            tickLine={false}
+            axisLine={false}
+          />
+          <YAxis width={72} tick={chartAxisTick} tickLine={false} axisLine={false} />
+          <Tooltip
+            contentStyle={chartTooltipStyle}
+            labelStyle={chartTooltipLabelStyle}
+            itemStyle={chartTooltipItemStyle}
+            cursor={chartCursorStyle}
+          />
+          <Legend wrapperStyle={chartLegendStyle} />
           {competitors.map((name, index) => (
             <Line
               key={name}
@@ -57,7 +98,14 @@ export function ProductPriceTimeline({ data }: { data: ProductDetailPoint[] }) {
               isAnimationActive={false}
             />
           ))}
-          <Brush dataKey="date" height={22} travellerWidth={8} />
+          <Brush
+            dataKey="date"
+            height={24}
+            travellerWidth={8}
+            fill="hsl(var(--muted))"
+            stroke="hsl(var(--border))"
+            tickFormatter={() => ''}
+          />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -68,14 +116,25 @@ export function ProductSpreadChart({ data }: { data: ProductSpreadPoint[] }) {
   return (
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
-          <XAxis dataKey="date" minTickGap={28} />
-          <YAxis width={72} />
-          <Tooltip />
-          <Area type="monotone" dataKey="max" stroke="#ef4444" fill="#ef4444" fillOpacity={0.12} />
-          <Area type="monotone" dataKey="avg" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.18} />
-          <Area type="monotone" dataKey="min" stroke="#22c55e" fill="#22c55e" fillOpacity={0.12} />
+        <AreaChart data={data} margin={chartMargin}>
+          <CartesianGrid stroke={chartGridStroke} strokeDasharray="3 3" opacity={0.55} />
+          <XAxis
+            dataKey="date"
+            minTickGap={28}
+            tick={chartAxisTick}
+            tickLine={false}
+            axisLine={false}
+          />
+          <YAxis width={72} tick={chartAxisTick} tickLine={false} axisLine={false} />
+          <Tooltip
+            contentStyle={chartTooltipStyle}
+            labelStyle={chartTooltipLabelStyle}
+            itemStyle={chartTooltipItemStyle}
+            cursor={chartCursorStyle}
+          />
+          <Area type="monotone" dataKey="max" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} />
+          <Area type="monotone" dataKey="avg" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.14} />
+          <Area type="monotone" dataKey="min" stroke="#22c55e" fill="#22c55e" fillOpacity={0.1} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -89,17 +148,31 @@ export function DiscountTimeline({ data }: { data: ProductDetailPoint[] }) {
     const key = point.date.slice(0, 10);
     byDate.set(key, Math.max(byDate.get(key) ?? 0, point.discountPct));
   }
-  const rows = Array.from(byDate.entries()).map(([date, discount]) => ({ date, discount: Number(discount.toFixed(1)) }));
+  const rows = Array.from(byDate.entries()).map(([date, discount]) => ({
+    date,
+    discount: Number(discount.toFixed(1)),
+  }));
   if (rows.length === 0) return <EmptyChart label="No historical discounts captured" />;
   return (
     <div className="h-64">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
-          <XAxis dataKey="date" minTickGap={28} />
-          <YAxis width={52} />
-          <Tooltip />
-          <Bar dataKey="discount" fill="#f97316" />
+        <BarChart data={rows} margin={chartMargin} barCategoryGap="35%">
+          <CartesianGrid stroke={chartGridStroke} strokeDasharray="3 3" opacity={0.55} />
+          <XAxis
+            dataKey="date"
+            minTickGap={28}
+            tick={chartAxisTick}
+            tickLine={false}
+            axisLine={false}
+          />
+          <YAxis width={52} tick={chartAxisTick} tickLine={false} axisLine={false} />
+          <Tooltip
+            contentStyle={chartTooltipStyle}
+            labelStyle={chartTooltipLabelStyle}
+            itemStyle={chartTooltipItemStyle}
+            cursor={chartCursorStyle}
+          />
+          <Bar dataKey="discount" fill="#f97316" maxBarSize={56} radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -112,15 +185,32 @@ export function AvailabilityTimeline({ data }: { data: ProductDetailPoint[] }) {
   return (
     <div className="h-64">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
-          <XAxis dataKey="date" minTickGap={28} />
-          <YAxis width={52} />
-          <Tooltip />
-          <Legend />
-          <Bar dataKey="inStock" stackId="stock" fill="#22c55e" />
-          <Bar dataKey="outOfStock" stackId="stock" fill="#ef4444" />
-          <Bar dataKey="unknown" stackId="stock" fill="#64748b" />
+        <BarChart data={rows} margin={chartMargin} barCategoryGap="35%">
+          <CartesianGrid stroke={chartGridStroke} strokeDasharray="3 3" opacity={0.55} />
+          <XAxis
+            dataKey="date"
+            minTickGap={28}
+            tick={chartAxisTick}
+            tickLine={false}
+            axisLine={false}
+          />
+          <YAxis width={52} tick={chartAxisTick} tickLine={false} axisLine={false} />
+          <Tooltip
+            contentStyle={chartTooltipStyle}
+            labelStyle={chartTooltipLabelStyle}
+            itemStyle={chartTooltipItemStyle}
+            cursor={chartCursorStyle}
+          />
+          <Legend wrapperStyle={chartLegendStyle} />
+          <Bar
+            dataKey="inStock"
+            stackId="stock"
+            fill="#22c55e"
+            maxBarSize={56}
+            radius={[4, 4, 0, 0]}
+          />
+          <Bar dataKey="outOfStock" stackId="stock" fill="#ef4444" maxBarSize={56} />
+          <Bar dataKey="unknown" stackId="stock" fill="#64748b" maxBarSize={56} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -134,7 +224,7 @@ export function CompetitorActivityHeatmap({ data }: { data: ProductDetailPoint[]
     <div className="grid gap-2">
       {rows.slice(0, 10).map((row) => (
         <div key={row.name} className="grid grid-cols-[160px_1fr] items-center gap-3 text-xs">
-          <div className="truncate text-muted-foreground">{row.name}</div>
+          <div className="text-muted-foreground truncate">{row.name}</div>
           <div className="flex gap-1">
             {row.cells.map((value, index) => (
               <span
@@ -157,13 +247,20 @@ export function CheapestRotationChart({ data }: { data: ProductDetailPoint[] }) 
   return (
     <div className="h-64">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
-          <XAxis dataKey="name" />
-          <YAxis width={52} />
-          <Tooltip />
-          <Bar dataKey="days">
-            {rows.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+        <BarChart data={rows} margin={chartMargin} barCategoryGap="35%">
+          <CartesianGrid stroke={chartGridStroke} strokeDasharray="3 3" opacity={0.55} />
+          <XAxis dataKey="name" tick={chartAxisTick} tickLine={false} axisLine={false} />
+          <YAxis width={52} tick={chartAxisTick} tickLine={false} axisLine={false} />
+          <Tooltip
+            contentStyle={chartTooltipStyle}
+            labelStyle={chartTooltipLabelStyle}
+            itemStyle={chartTooltipItemStyle}
+            cursor={chartCursorStyle}
+          />
+          <Bar dataKey="days" maxBarSize={56} radius={[4, 4, 0, 0]}>
+            {rows.map((_, index) => (
+              <Cell key={index} fill={COLORS[index % COLORS.length]} />
+            ))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -172,7 +269,11 @@ export function CheapestRotationChart({ data }: { data: ProductDetailPoint[] }) 
 }
 
 function EmptyChart({ label }: { label: string }) {
-  return <div className="flex h-64 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">{label}</div>;
+  return (
+    <div className="border-border/80 bg-muted/20 text-muted-foreground flex h-64 items-center justify-center rounded-md border border-dashed text-sm">
+      {label}
+    </div>
+  );
 }
 
 function buildMultiLineData(data: ProductDetailPoint[]) {
@@ -187,7 +288,10 @@ function buildMultiLineData(data: ProductDetailPoint[]) {
 }
 
 function buildAvailabilityRows(data: ProductDetailPoint[]) {
-  const map = new Map<string, { date: string; inStock: number; outOfStock: number; unknown: number }>();
+  const map = new Map<
+    string,
+    { date: string; inStock: number; outOfStock: number; unknown: number }
+  >();
   for (const point of data) {
     const date = point.date.slice(0, 10);
     const row = map.get(date) ?? { date, inStock: 0, outOfStock: 0, unknown: 0 };
@@ -204,7 +308,11 @@ function buildActivityRows(data: ProductDetailPoint[]) {
   const names = Array.from(new Set(data.map((point) => point.competitorName)));
   return names.map((name) => ({
     name,
-    cells: buckets.map((bucket) => data.filter((point) => point.competitorName === name && point.date.startsWith(bucket)).length),
+    cells: buckets.map(
+      (bucket) =>
+        data.filter((point) => point.competitorName === name && point.date.startsWith(bucket))
+          .length,
+    ),
   }));
 }
 
@@ -222,7 +330,9 @@ function buildCheapestRows(data: ProductDetailPoint[]) {
     const cheapest = points.sort((a, b) => Number(a.price) - Number(b.price))[0];
     if (cheapest) wins.set(cheapest.competitorName, (wins.get(cheapest.competitorName) ?? 0) + 1);
   }
-  return Array.from(wins.entries()).map(([name, days]) => ({ name, days })).sort((a, b) => b.days - a.days);
+  return Array.from(wins.entries())
+    .map(([name, days]) => ({ name, days }))
+    .sort((a, b) => b.days - a.days);
 }
 
 function activityColor(value: number) {

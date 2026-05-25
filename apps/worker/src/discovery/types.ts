@@ -27,6 +27,7 @@ export interface DiscoveryOptions {
   concurrency: number;
   mode: DiscoveryMode;
   respectRobotsTxt: boolean;
+  jsRequired: boolean;
   useAi: boolean;
   useManualCaptcha: boolean;
   includePatterns: string[];

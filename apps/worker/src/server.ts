@@ -46,6 +46,7 @@ import {
   discoveryStatus,
   pauseDiscoveryRun,
   resumeDiscoveryRun,
+  skipCurrentDiscoveryItem,
   startDiscoveryRun,
 } from './discovery/discovery-runner.js';
 import { analyzeStore } from './discovery/store-analyzer.js';
@@ -135,6 +136,7 @@ const discoveryStartReqSchema = z.object({
   concurrency: z.number().int().min(1).max(3).default(1),
   mode: z.enum(['category_scan', 'detail_enrichment']).default('category_scan'),
   respectRobotsTxt: z.boolean().default(true),
+  jsRequired: z.boolean().default(false),
   useAi: z.boolean().default(false),
   useManualCaptcha: z.boolean().default(true),
   includePatterns: z.array(z.string()).default([]),
@@ -975,6 +977,15 @@ app.post('/discovery/resume', async (req, reply) => {
     return { ok: false, message: 'invalid_payload' };
   }
   return { ok: true, status: await resumeDiscoveryRun(parse.data.runId) };
+});
+
+app.post('/discovery/skip-current', async (req, reply) => {
+  const parse = discoveryControlReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  return { ok: true, status: await skipCurrentDiscoveryItem(parse.data.runId) };
 });
 
 app.post('/discovery/cancel', async (req, reply) => {

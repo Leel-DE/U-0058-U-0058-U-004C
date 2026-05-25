@@ -33,6 +33,7 @@ export const siteDiscoveryRuns = pgTable(
     useAi: boolean('use_ai').default(false).notNull(),
     useManualCaptcha: boolean('use_manual_captcha').default(true).notNull(),
     respectRobotsTxt: boolean('respect_robots_txt').default(true).notNull(),
+    jsRequired: boolean('js_required').default(false).notNull(),
     includePatterns: jsonb('include_patterns').default([]).notNull(),
     excludePatterns: jsonb('exclude_patterns').default([]).notNull(),
     pagesDiscovered: integer('pages_discovered').default(0).notNull(),

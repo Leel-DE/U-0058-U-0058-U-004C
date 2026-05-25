@@ -47,7 +47,11 @@ export const dynamic = 'force-dynamic';
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   const ctx = await getContext();
   const params = await searchParams;
   const filters = parseDashboardFilters(params);
@@ -66,30 +70,48 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     safeLoad('overview', () => getDashboardOverview(ctx.orgId, filters), [] as DashboardKpi[]),
     safeLoad('health', () => getMonitoringHealth(ctx.orgId, filters), null),
     safeLoad('movements', () => getPriceMovements(ctx.orgId, filters), null),
-    safeLoad('competitor activity', () => getCompetitorActivity(ctx.orgId, filters), [] as CompetitorActivityRow[]),
-    safeLoad('attention', () => getProductsRequiringAttention(ctx.orgId, filters), [] as AttentionProduct[]),
+    safeLoad(
+      'competitor activity',
+      () => getCompetitorActivity(ctx.orgId, filters),
+      [] as CompetitorActivityRow[],
+    ),
+    safeLoad(
+      'attention',
+      () => getProductsRequiringAttention(ctx.orgId, filters),
+      [] as AttentionProduct[],
+    ),
     safeLoad('availability', () => getAvailabilityOverview(ctx.orgId, filters), null),
     safeLoad('events', () => getRecentEvents(ctx.orgId, filters), [] as RecentEvent[]),
     safeLoad('freshness', () => getDataFreshness(ctx.orgId, filters), null),
-    safeLoad('filters', () => getDashboardFilterOptions(ctx.orgId), { competitors: [], categories: [] }),
+    safeLoad('filters', () => getDashboardFilterOptions(ctx.orgId), {
+      competitors: [],
+      categories: [],
+    }),
   ]);
 
-  const totalProducts = overview.find((kpi) => kpi.label === 'Total monitored products')?.numericValue ?? 0;
-  const totalCompetitors = overview.find((kpi) => kpi.label === 'Total competitors')?.numericValue ?? 0;
+  const totalProducts =
+    overview.find((kpi) => kpi.label === 'Total monitored products')?.numericValue ?? 0;
+  const totalCompetitors =
+    overview.find((kpi) => kpi.label === 'Total competitors')?.numericValue ?? 0;
 
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Operational overview of competitor changes, scraping health, and products that need attention.
+          <p className="text-muted-foreground text-sm">
+            Operational overview of competitor changes, scraping health, and products that need
+            attention.
           </p>
         </div>
         <QuickActions />
       </header>
 
-      <DashboardFilters current={params} competitors={filterOptions.competitors} categories={filterOptions.categories} />
+      <DashboardFilters
+        current={params}
+        competitors={filterOptions.competitors}
+        categories={filterOptions.categories}
+      />
 
       {totalProducts === 0 && totalCompetitors === 0 ? (
         <EmptyState
@@ -98,8 +120,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           description="Run site discovery or add products manually to populate price movements, health metrics, and alerts."
           action={
             <div className="flex flex-wrap justify-center gap-2">
-              <Button asChild><Link href="/competitors">Add competitor</Link></Button>
-              <Button asChild variant="outline"><Link href="/products">Add product manually</Link></Button>
+              <Button asChild>
+                <Link href="/competitors">Add competitor</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/products">Add product manually</Link>
+              </Button>
             </div>
           }
         />
@@ -108,20 +134,36 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <KpiGrid data={overview} />
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-            {movements ? <PriceMovementOverview data={movements} /> : <WidgetError title="Price movement overview" />}
-            {health ? <MonitoringHealthPanel data={health} /> : <WidgetError title="Monitoring health" />}
+            {movements ? (
+              <PriceMovementOverview data={movements} />
+            ) : (
+              <WidgetError title="Price movement overview" />
+            )}
+            {health ? (
+              <MonitoringHealthPanel data={health} />
+            ) : (
+              <WidgetError title="Monitoring health" />
+            )}
           </div>
 
           <div className="grid gap-4 xl:grid-cols-2">
             <CompetitorActivityPanel data={competitorActivity} />
-            {availability ? <AvailabilityPanel data={availability} /> : <WidgetError title="Availability overview" />}
+            {availability ? (
+              <AvailabilityPanel data={availability} />
+            ) : (
+              <WidgetError title="Availability overview" />
+            )}
           </div>
 
           <ProductsAttentionTable data={attention} />
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
             <RecentEventsFeed data={events} />
-            {freshness ? <DataFreshnessPanel data={freshness} /> : <WidgetError title="Data freshness" />}
+            {freshness ? (
+              <DataFreshnessPanel data={freshness} />
+            ) : (
+              <WidgetError title="Data freshness" />
+            )}
           </div>
         </>
       )}
@@ -156,44 +198,85 @@ function DashboardFilters({
     <Card>
       <CardContent className="grid gap-3 p-4 md:grid-cols-3 xl:grid-cols-[160px_240px_220px_170px_170px_1fr]">
         <label className="space-y-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Date range</span>
-          <select name="range" form="dashboard-filter-form" defaultValue={range} className="h-10 w-full rounded-md border bg-background px-3">
+          <span className="text-muted-foreground text-xs font-medium uppercase">Date range</span>
+          <select
+            name="range"
+            form="dashboard-filter-form"
+            defaultValue={range}
+            className="bg-background h-10 w-full rounded-md border px-3"
+          >
             <option value="today">Today</option>
             <option value="7d">7 days</option>
             <option value="30d">30 days</option>
           </select>
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Competitor</span>
-          <select name="competitor" form="dashboard-filter-form" defaultValue={competitor} className="h-10 w-full rounded-md border bg-background px-3">
+          <span className="text-muted-foreground text-xs font-medium uppercase">Competitor</span>
+          <select
+            name="competitor"
+            form="dashboard-filter-form"
+            defaultValue={competitor}
+            className="bg-background h-10 w-full rounded-md border px-3"
+          >
             <option value="all">All competitors</option>
-            {competitors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            {competitors.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
           </select>
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Category</span>
-          <select name="category" form="dashboard-filter-form" defaultValue={category} className="h-10 w-full rounded-md border bg-background px-3">
+          <span className="text-muted-foreground text-xs font-medium uppercase">Category</span>
+          <select
+            name="category"
+            form="dashboard-filter-form"
+            defaultValue={category}
+            className="bg-background h-10 w-full rounded-md border px-3"
+          >
             <option value="all">All categories</option>
-            {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            {categories.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
           </select>
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Competitor status</span>
-          <select name="activeOnly" form="dashboard-filter-form" defaultValue={activeOnly ? 'true' : 'false'} className="h-10 w-full rounded-md border bg-background px-3">
+          <span className="text-muted-foreground text-xs font-medium uppercase">
+            Competitor status
+          </span>
+          <select
+            name="activeOnly"
+            form="dashboard-filter-form"
+            defaultValue={activeOnly ? 'true' : 'false'}
+            className="bg-background h-10 w-full rounded-md border px-3"
+          >
             <option value="true">Only active</option>
             <option value="false">All statuses</option>
           </select>
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-xs font-medium uppercase text-muted-foreground">Issue focus</span>
-          <select name="failedOnly" form="dashboard-filter-form" defaultValue={failedOnly ? 'true' : 'false'} className="h-10 w-full rounded-md border bg-background px-3">
+          <span className="text-muted-foreground text-xs font-medium uppercase">Issue focus</span>
+          <select
+            name="failedOnly"
+            form="dashboard-filter-form"
+            defaultValue={failedOnly ? 'true' : 'false'}
+            className="bg-background h-10 w-full rounded-md border px-3"
+          >
             <option value="false">All data</option>
             <option value="true">Failed/stale only</option>
           </select>
         </label>
-        <form id="dashboard-filter-form" className="flex items-end justify-end gap-2" action="/dashboard">
+        <form
+          id="dashboard-filter-form"
+          className="flex items-end justify-end gap-2"
+          action="/dashboard"
+        >
           <Button type="submit">Apply filters</Button>
-          <Button asChild variant="outline"><Link href="/dashboard">Reset</Link></Button>
+          <Button asChild variant="outline">
+            <Link href="/dashboard">Reset</Link>
+          </Button>
         </form>
       </CardContent>
     </Card>
@@ -206,20 +289,28 @@ function KpiGrid({ data }: { data: DashboardKpi[] }) {
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {data.map((card) => {
         const body = (
-          <Card className="h-full transition-colors hover:bg-muted/30">
+          <Card className="hover:border-primary/35 hover:bg-muted/20 h-full transition-colors">
             <CardContent className="p-5">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm text-muted-foreground">{card.label}</div>
+                <div className="text-muted-foreground text-sm font-medium">{card.label}</div>
                 <StatusDot status={card.status} />
               </div>
               <div className="mt-2 text-2xl font-semibold tabular-nums">{card.value}</div>
-              <div className="mt-2 text-xs text-muted-foreground">
-                {card.delta == null ? 'No comparison' : `${card.delta >= 0 ? '+' : ''}${card.delta.toFixed(1)}% vs previous period`}
+              <div className="text-muted-foreground mt-2 text-xs">
+                {card.delta == null
+                  ? 'No comparison'
+                  : `${card.delta >= 0 ? '+' : ''}${card.delta.toFixed(1)}% vs previous period`}
               </div>
             </CardContent>
           </Card>
         );
-        return card.href ? <Link key={card.label} href={card.href}>{body}</Link> : <div key={card.label}>{body}</div>;
+        return card.href ? (
+          <Link key={card.label} href={card.href}>
+            {body}
+          </Link>
+        ) : (
+          <div key={card.label}>{body}</div>
+        );
       })}
     </div>
   );
@@ -231,7 +322,17 @@ function MonitoringHealthPanel({ data }: { data: MonitoringHealth }) {
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <CardTitle>Monitoring health</CardTitle>
-          <Badge variant={data.status === 'healthy' ? 'success' : data.status === 'warning' ? 'warning' : 'destructive'}>{data.status}</Badge>
+          <Badge
+            variant={
+              data.status === 'healthy'
+                ? 'success'
+                : data.status === 'warning'
+                  ? 'warning'
+                  : 'destructive'
+            }
+          >
+            {data.status}
+          </Badge>
         </div>
         <CardDescription>Scraping stability and operational blockers.</CardDescription>
       </CardHeader>
@@ -245,9 +346,13 @@ function MonitoringHealthPanel({ data }: { data: MonitoringHealth }) {
           <Metric label="Stale products" value={data.staleProductsCount.toLocaleString()} />
         </div>
         <Separator />
-        <div className="text-sm text-muted-foreground">Last worker heartbeat: {timeAgo(data.lastWorkerHeartbeat)}</div>
+        <div className="text-muted-foreground text-sm">
+          Last worker heartbeat: {timeAgo(data.lastWorkerHeartbeat)}
+        </div>
         <ul className="space-y-1 text-sm">
-          {data.reasons.map((reason) => <li key={reason}>- {reason}</li>)}
+          {data.reasons.map((reason) => (
+            <li key={reason}>- {reason}</li>
+          ))}
         </ul>
       </CardContent>
     </Card>
@@ -272,24 +377,41 @@ function PriceMovementOverview({ data }: { data: PriceMovements }) {
   );
 }
 
-function MovementTable({ title, rows, direction }: { title: string; rows: PriceMovementRow[]; direction: 'up' | 'down' }) {
+function MovementTable({
+  title,
+  rows,
+  direction,
+}: {
+  title: string;
+  rows: PriceMovementRow[];
+  direction: 'up' | 'down';
+}) {
   return (
     <div>
       <h3 className="mb-2 text-sm font-semibold">{title}</h3>
       {rows.length === 0 ? (
-        <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No rows.</div>
+        <div className="text-muted-foreground rounded-md border border-dashed p-4 text-sm">
+          No rows.
+        </div>
       ) : (
         <table className="w-full text-sm">
           <tbody>
             {rows.slice(0, 5).map((row) => (
               <tr key={`${row.productId}-${row.capturedAt}`} className="border-t">
                 <td className="py-2 pr-2">
-                  <Link className="font-medium hover:underline" href={`/competitors/products/${row.productId}`}>{row.productTitle}</Link>
-                  <div className="text-xs text-muted-foreground">{row.competitorName}</div>
+                  <Link
+                    className="font-medium hover:underline"
+                    href={`/competitors/products/${row.productId}`}
+                  >
+                    {row.productTitle}
+                  </Link>
+                  <div className="text-muted-foreground text-xs">{row.competitorName}</div>
                 </td>
                 <td className="py-2 text-right tabular-nums">
                   <div>{formatCurrency(row.newPrice, row.currency)}</div>
-                  <div className={direction === 'down' ? 'text-success' : 'text-destructive'}>{formatPct(row.deltaPct)}</div>
+                  <div className={direction === 'down' ? 'text-success' : 'text-destructive'}>
+                    {formatPct(row.deltaPct)}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -310,8 +432,14 @@ function CompetitorActivityPanel({ data }: { data: CompetitorActivityRow[] }) {
       <CardContent className="space-y-4">
         <CompetitorActivityChart data={data} />
         <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase text-muted-foreground">
-            <tr><th className="py-2">Competitor</th><th>Products</th><th>Changes</th><th>Failed</th><th>Last crawl</th></tr>
+          <thead className="text-muted-foreground text-left text-xs uppercase">
+            <tr>
+              <th className="py-2">Competitor</th>
+              <th>Products</th>
+              <th>Changes</th>
+              <th>Failed</th>
+              <th>Last crawl</th>
+            </tr>
           </thead>
           <tbody>
             {data.slice(0, 8).map((row) => (
@@ -346,7 +474,10 @@ function AvailabilityPanel({ data }: { data: AvailabilityOverview }) {
         <AvailabilityDistributionChart data={data} />
         <div className="grid gap-3 sm:grid-cols-2">
           <Metric label="Back in stock today" value={data.backInStockToday.toLocaleString()} />
-          <Metric label="Newly unavailable today" value={data.newlyUnavailableToday.toLocaleString()} />
+          <Metric
+            label="Newly unavailable today"
+            value={data.newlyUnavailableToday.toLocaleString()}
+          />
         </div>
       </CardContent>
     </Card>
@@ -358,16 +489,30 @@ function ProductsAttentionTable({ data }: { data: AttentionProduct[] }) {
     <Card>
       <CardHeader>
         <CardTitle>Products requiring attention</CardTitle>
-        <CardDescription>Operational issues from latest snapshots, stale data, selectors, and stock changes.</CardDescription>
+        <CardDescription>
+          Operational issues from latest snapshots, stale data, selectors, and stock changes.
+        </CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto p-0">
         {data.length === 0 ? (
-          <div className="p-6"><EmptyState title="No attention items" description="No high-priority product issues in this filter." /></div>
+          <div className="p-6">
+            <EmptyState
+              title="No attention items"
+              description="No high-priority product issues in this filter."
+            />
+          </div>
         ) : (
           <table className="w-full min-w-[980px] text-sm">
-            <thead className="text-left text-xs uppercase text-muted-foreground">
+            <thead className="text-muted-foreground text-left text-xs uppercase">
               <tr>
-                <th className="px-4 py-2">Product</th><th className="px-4 py-2">Issue</th><th className="px-4 py-2">Price</th><th className="px-4 py-2">Previous</th><th className="px-4 py-2">Availability</th><th className="px-4 py-2">Confidence</th><th className="px-4 py-2">Last checked</th><th className="px-4 py-2">Action</th>
+                <th className="px-4 py-2">Product</th>
+                <th className="px-4 py-2">Issue</th>
+                <th className="px-4 py-2">Price</th>
+                <th className="px-4 py-2">Previous</th>
+                <th className="px-4 py-2">Availability</th>
+                <th className="px-4 py-2">Confidence</th>
+                <th className="px-4 py-2">Last checked</th>
+                <th className="px-4 py-2">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -375,15 +520,27 @@ function ProductsAttentionTable({ data }: { data: AttentionProduct[] }) {
                 <tr key={`${row.productId}-${row.issueType}`} className="border-t">
                   <td className="px-4 py-2">
                     <div className="font-medium">{row.productTitle}</div>
-                    <div className="text-xs text-muted-foreground">{row.competitorName}</div>
+                    <div className="text-muted-foreground text-xs">{row.competitorName}</div>
                   </td>
-                  <td className="px-4 py-2"><IssueBadge issue={row.issueType} /></td>
-                  <td className="px-4 py-2 tabular-nums">{formatCurrency(row.currentPrice, row.currency)}</td>
-                  <td className="px-4 py-2 tabular-nums">{formatCurrency(row.previousPrice, row.currency)}</td>
+                  <td className="px-4 py-2">
+                    <IssueBadge issue={row.issueType} />
+                  </td>
+                  <td className="px-4 py-2 tabular-nums">
+                    {formatCurrency(row.currentPrice, row.currency)}
+                  </td>
+                  <td className="px-4 py-2 tabular-nums">
+                    {formatCurrency(row.previousPrice, row.currency)}
+                  </td>
                   <td className="px-4 py-2">{row.availability ?? 'unknown'}</td>
-                  <td className="px-4 py-2 tabular-nums">{row.confidence == null ? '-' : `${Math.round(row.confidence * 100)}%`}</td>
+                  <td className="px-4 py-2 tabular-nums">
+                    {row.confidence == null ? '-' : `${Math.round(row.confidence * 100)}%`}
+                  </td>
                   <td className="px-4 py-2">{timeAgo(row.lastChecked)}</td>
-                  <td className="px-4 py-2"><Button asChild size="sm" variant="outline"><Link href={row.href}>Open</Link></Button></td>
+                  <td className="px-4 py-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={row.href}>Open</Link>
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -399,10 +556,17 @@ function RecentEventsFeed({ data }: { data: RecentEvent[] }) {
     <Card>
       <CardHeader>
         <CardTitle>Recent events</CardTitle>
-        <CardDescription>Latest price, discovery, scrape, alert, captcha, and export events.</CardDescription>
+        <CardDescription>
+          Latest price, discovery, scrape, alert, captcha, and export events.
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        {data.length === 0 ? <EmptyState title="No recent events" description="Events will appear as monitoring runs." /> : (
+        {data.length === 0 ? (
+          <EmptyState
+            title="No recent events"
+            description="Events will appear as monitoring runs."
+          />
+        ) : (
           <div className="space-y-3">
             {data.map((event) => (
               <div key={event.id} className="flex items-start gap-3 rounded-md border p-3">
@@ -410,11 +574,19 @@ function RecentEventsFeed({ data }: { data: RecentEvent[] }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-3">
                     <div className="truncate font-medium">{event.entity}</div>
-                    <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(event.timestamp)}</span>
+                    <span className="text-muted-foreground shrink-0 text-xs">
+                      {timeAgo(event.timestamp)}
+                    </span>
                   </div>
-                  <div className="text-xs text-muted-foreground">{event.type.replace(/_/g, ' ')}</div>
+                  <div className="text-muted-foreground text-xs">
+                    {event.type.replace(/_/g, ' ')}
+                  </div>
                 </div>
-                {event.href ? <Link href={event.href}><ExternalLink className="h-4 w-4 text-muted-foreground" /></Link> : null}
+                {event.href ? (
+                  <Link href={event.href}>
+                    <ExternalLink className="text-muted-foreground h-4 w-4" />
+                  </Link>
+                ) : null}
               </div>
             ))}
           </div>
@@ -433,8 +605,13 @@ function DataFreshnessPanel({ data }: { data: DataFreshness }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
-          <div className="mb-2 flex justify-between text-sm"><span>Fresh &lt; 24h</span><span>{data.freshPct}%</span></div>
-          <div className="h-2 rounded-full bg-muted"><div className="h-2 rounded-full bg-primary" style={{ width: `${data.freshPct}%` }} /></div>
+          <div className="mb-2 flex justify-between text-sm">
+            <span>Fresh &lt; 24h</span>
+            <span>{data.freshPct}%</span>
+          </div>
+          <div className="bg-muted h-2 rounded-full">
+            <div className="bg-primary h-2 rounded-full" style={{ width: `${data.freshPct}%` }} />
+          </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Metric label="Fresh" value={data.fresh.toLocaleString()} />
@@ -450,20 +627,38 @@ function DataFreshnessPanel({ data }: { data: DataFreshness }) {
 function QuickActions() {
   return (
     <div className="flex flex-wrap gap-2">
-      <Button asChild size="sm"><Link href="/competitors"><Plus className="mr-2 h-4 w-4" />Add competitor</Link></Button>
-      <Button asChild size="sm" variant="outline"><Link href="/competitors">Start discovery</Link></Button>
-      <Button asChild size="sm" variant="outline"><Link href="/jobs"><RefreshCw className="mr-2 h-4 w-4" />Run scrape now</Link></Button>
-      <Button asChild size="sm" variant="outline"><Link href="/jobs?status=failed">View failed jobs</Link></Button>
-      <Button asChild size="sm" variant="outline"><Link href="/exports">Export latest report</Link></Button>
-      <Button asChild size="sm" variant="outline"><Link href="/alerts">Open alerts</Link></Button>
+      <Button asChild size="sm">
+        <Link href="/competitors">
+          <Plus className="mr-2 h-4 w-4" />
+          Add competitor
+        </Link>
+      </Button>
+      <Button asChild size="sm" variant="outline">
+        <Link href="/competitors">Start discovery</Link>
+      </Button>
+      <Button asChild size="sm" variant="outline">
+        <Link href="/jobs">
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Run scrape now
+        </Link>
+      </Button>
+      <Button asChild size="sm" variant="outline">
+        <Link href="/jobs?status=failed">View failed jobs</Link>
+      </Button>
+      <Button asChild size="sm" variant="outline">
+        <Link href="/exports">Export latest report</Link>
+      </Button>
+      <Button asChild size="sm" variant="outline">
+        <Link href="/alerts">Open alerts</Link>
+      </Button>
     </div>
   );
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border p-3">
-      <div className="text-xs uppercase text-muted-foreground">{label}</div>
+    <div className="border-border/70 bg-muted/15 rounded-md border p-3">
+      <div className="text-muted-foreground text-xs font-medium uppercase">{label}</div>
       <div className="mt-1 font-semibold tabular-nums">{value}</div>
     </div>
   );
@@ -472,25 +667,63 @@ function Metric({ label, value }: { label: string; value: string }) {
 function WidgetError({ title }: { title: string }) {
   return (
     <Card>
-      <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
-      <CardContent><EmptyState title="Widget unavailable" description="This section failed to load; other dashboard widgets are still available." /></CardContent>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <EmptyState
+          title="Widget unavailable"
+          description="This section failed to load; other dashboard widgets are still available."
+        />
+      </CardContent>
     </Card>
   );
 }
 
 function StatusDot({ status }: { status: DashboardKpi['status'] }) {
-  const cls = status === 'good' ? 'bg-success' : status === 'warning' ? 'bg-warning' : status === 'critical' ? 'bg-destructive' : 'bg-muted-foreground';
+  const cls =
+    status === 'good'
+      ? 'bg-success'
+      : status === 'warning'
+        ? 'bg-warning'
+        : status === 'critical'
+          ? 'bg-destructive'
+          : 'bg-muted-foreground';
   return <span className={`h-2.5 w-2.5 rounded-full ${cls}`} />;
 }
 
 function IssueBadge({ issue }: { issue: AttentionProduct['issueType'] }) {
-  const critical = issue === 'captcha_required' || issue === 'selector_broken' || issue === 'extraction_failed' || issue === 'missing_price';
-  return <Badge variant={critical ? 'destructive' : issue === 'stale_data' ? 'warning' : 'secondary'}>{issue.replace(/_/g, ' ')}</Badge>;
+  const critical =
+    issue === 'captcha_required' ||
+    issue === 'selector_broken' ||
+    issue === 'extraction_failed' ||
+    issue === 'missing_price';
+  return (
+    <Badge variant={critical ? 'destructive' : issue === 'stale_data' ? 'warning' : 'secondary'}>
+      {issue.replace(/_/g, ' ')}
+    </Badge>
+  );
 }
 
 function EventIcon({ type, status }: { type: RecentEvent['type']; status: RecentEvent['status'] }) {
-  const className = status === 'critical' ? 'text-destructive' : status === 'warning' ? 'text-warning' : status === 'success' ? 'text-success' : 'text-muted-foreground';
-  const icon = type === 'price_changed' ? <Activity /> : type === 'alert_triggered' || type === 'captcha_required' || type === 'scrape_failed' ? <AlertTriangle /> : type === 'export_completed' ? <CheckCircle2 /> : <Clock />;
+  const className =
+    status === 'critical'
+      ? 'text-destructive'
+      : status === 'warning'
+        ? 'text-warning'
+        : status === 'success'
+          ? 'text-success'
+          : 'text-muted-foreground';
+  const icon =
+    type === 'price_changed' ? (
+      <Activity />
+    ) : type === 'alert_triggered' || type === 'captcha_required' || type === 'scrape_failed' ? (
+      <AlertTriangle />
+    ) : type === 'export_completed' ? (
+      <CheckCircle2 />
+    ) : (
+      <Clock />
+    );
   return <span className={`mt-0.5 [&>svg]:h-4 [&>svg]:w-4 ${className}`}>{icon}</span>;
 }
 

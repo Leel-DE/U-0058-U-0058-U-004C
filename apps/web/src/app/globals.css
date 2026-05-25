@@ -31,19 +31,19 @@
   }
 
   .dark {
-    --background: 222 47% 6%;
+    --background: 224 39% 5%;
     --foreground: 210 40% 98%;
-    --card: 222 47% 8%;
+    --card: 223 35% 8%;
     --card-foreground: 210 40% 98%;
-    --popover: 222 47% 8%;
+    --popover: 223 35% 8%;
     --popover-foreground: 210 40% 98%;
     --primary: 217 91% 60%;
     --primary-foreground: 222 47% 11%;
-    --secondary: 217 33% 17%;
+    --secondary: 216 30% 16%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 33% 17%;
+    --muted: 217 28% 15%;
+    --muted-foreground: 215 22% 70%;
+    --accent: 190 36% 16%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
@@ -51,8 +51,8 @@
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 222 47% 11%;
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
+    --border: 218 25% 18%;
+    --input: 218 25% 18%;
     --ring: 217 91% 60%;
   }
 
@@ -61,5 +61,28 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  .recharts-default-tooltip {
+    background: hsl(var(--popover)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: 0 18px 45px rgb(0 0 0 / 0.28) !important;
+    color: hsl(var(--popover-foreground)) !important;
+  }
+
+  .recharts-tooltip-label {
+    color: hsl(var(--foreground)) !important;
+    font-weight: 600;
+  }
+
+  .recharts-brush .recharts-brush-slide {
+    fill: hsl(var(--accent)) !important;
+    fill-opacity: 0.72 !important;
+  }
+
+  .recharts-brush .recharts-brush-traveller rect {
+    fill: hsl(var(--primary)) !important;
+    stroke: hsl(var(--primary)) !important;
   }
 }

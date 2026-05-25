@@ -31,6 +31,7 @@ interface DiscoveryLimits {
 interface DiscoveryFormDefaults extends Partial<DiscoveryLimits> {
   mode?: 'category_scan' | 'detail_enrichment';
   respectRobotsTxt?: boolean;
+  jsRequired?: boolean;
   useAi?: boolean;
   useManualCaptcha?: boolean;
   includePatterns?: string[] | string;
@@ -135,6 +136,7 @@ export function DiscoveryStartForm({
   });
   const [mode, setMode] = useState<'category_scan' | 'detail_enrichment'>(defaults.mode ?? 'category_scan');
   const [respectRobotsTxt, setRespectRobotsTxt] = useState(defaults.respectRobotsTxt ?? true);
+  const [jsRequired, setJsRequired] = useState(defaults.jsRequired ?? false);
   const [useAi, setUseAi] = useState(defaults.useAi ?? false);
   const [useManualCaptcha, setUseManualCaptcha] = useState(defaults.useManualCaptcha ?? true);
   const [includePatterns, setIncludePatterns] = useState(listToText(defaults.includePatterns));
@@ -172,6 +174,7 @@ export function DiscoveryStartForm({
         concurrency: 1,
         mode,
         respectRobotsTxt,
+        jsRequired,
         useAi,
         useManualCaptcha,
         includePatterns,
@@ -268,8 +271,9 @@ export function DiscoveryStartForm({
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <Toggle label="Respect robots.txt" checked={respectRobotsTxt} onCheckedChange={setRespectRobotsTxt} />
+        <Toggle label="Force JavaScript rendering" checked={jsRequired} onCheckedChange={setJsRequired} />
         <Toggle label="Use AI detection fallback" checked={useAi} onCheckedChange={setUseAi} />
         <Toggle label="Use manual captcha mode" checked={useManualCaptcha} onCheckedChange={setUseManualCaptcha} />
       </div>

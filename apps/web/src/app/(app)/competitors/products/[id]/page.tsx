@@ -4,6 +4,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ExternalLink } from 'lucide-react';
+import { ProductImage } from '@/components/product-image';
 import { db, schema } from '@/lib/db';
 import { getContext } from '@/lib/auth';
 import { formatCurrency, timeAgo } from '@/lib/utils';
@@ -28,10 +29,7 @@ export default async function CompetitorProductPage({
     .from(schema.competitorProducts)
     .innerJoin(schema.stores, eq(schema.stores.id, schema.competitorProducts.storeId))
     .where(
-      and(
-        eq(schema.competitorProducts.id, id),
-        eq(schema.competitorProducts.orgId, ctx.orgId),
-      ),
+      and(eq(schema.competitorProducts.id, id), eq(schema.competitorProducts.orgId, ctx.orgId)),
     )
     .limit(1);
   const row = rows[0];
@@ -44,6 +42,7 @@ export default async function CompetitorProductPage({
       price: schema.priceSnapshots.price,
       currency: schema.priceSnapshots.currency,
       availability: schema.priceSnapshots.availability,
+      imageUrl: schema.priceSnapshots.imageUrl,
       status: schema.priceSnapshots.status,
       source: schema.priceSnapshots.source,
     })
@@ -53,19 +52,31 @@ export default async function CompetitorProductPage({
     .limit(500);
 
   const canManage = ctx.role !== 'viewer';
+  const latestSnapshotImage =
+    snapshots
+      .slice()
+      .reverse()
+      .find((snapshot) => snapshot.imageUrl)?.imageUrl ?? null;
+  const imageUrl = row.product.imageUrl ?? latestSnapshotImage;
 
   return (
     <div className="space-y-6">
-      <header className="flex items-start justify-between">
+      <header className="grid gap-4 lg:grid-cols-[160px_1fr]">
+        <ProductImage
+          src={imageUrl}
+          className="h-40 w-full rounded-lg"
+          imageClassName="object-contain p-3"
+          iconClassName="h-10 w-10"
+          sizes="160px"
+          priority
+        />
         <div className="space-y-1">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <Link href={`/competitors/${row.store.id}`} className="hover:underline">
               {row.store.name}
             </Link>
             <span>·</span>
-            <Badge variant="outline">
-              {row.product.lastSnapshotAvailability ?? 'unknown'}
-            </Badge>
+            <Badge variant="outline">{row.product.lastSnapshotAvailability ?? 'unknown'}</Badge>
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">
             {row.product.title ?? row.product.url}
@@ -74,7 +85,7 @@ export default async function CompetitorProductPage({
             href={row.product.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            className="text-primary inline-flex items-center gap-1 text-sm hover:underline"
           >
             View on store <ExternalLink className="h-3 w-3" />
           </a>
@@ -83,25 +94,36 @@ export default async function CompetitorProductPage({
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader><CardTitle className="text-sm font-medium">Latest price</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Latest price</CardTitle>
+          </CardHeader>
           <CardContent className="text-3xl font-semibold tabular-nums">
             {row.product.lastSnapshotPrice
-              ? formatCurrency(row.product.lastSnapshotPrice, row.product.lastSnapshotCurrency ?? 'EUR')
+              ? formatCurrency(
+                  row.product.lastSnapshotPrice,
+                  row.product.lastSnapshotCurrency ?? 'EUR',
+                )
               : '—'}
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-sm font-medium">Last scrape</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Last scrape</CardTitle>
+          </CardHeader>
           <CardContent className="text-base">{timeAgo(row.product.lastScrapedAt)}</CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-sm font-medium">Snapshots</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Snapshots</CardTitle>
+          </CardHeader>
           <CardContent className="text-base">{snapshots.length}</CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Price history</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Price history</CardTitle>
+        </CardHeader>
         <CardContent>
           <PriceHistoryChart
             data={snapshots
@@ -117,7 +139,9 @@ export default async function CompetitorProductPage({
 
       {canManage ? (
         <Card>
-          <CardHeader><CardTitle>Manual price entry</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Manual price entry</CardTitle>
+          </CardHeader>
           <CardContent>
             <ManualSnapshotForm
               competitorProductId={row.product.id}
@@ -128,13 +152,15 @@ export default async function CompetitorProductPage({
       ) : null}
 
       <Card>
-        <CardHeader><CardTitle>Recent scrape log</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Recent scrape log</CardTitle>
+        </CardHeader>
         <CardContent>
           {snapshots.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No snapshots yet.</p>
+            <p className="text-muted-foreground text-sm">No snapshots yet.</p>
           ) : (
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-muted-foreground">
+              <thead className="text-muted-foreground text-left text-xs uppercase">
                 <tr>
                   <th className="py-1.5">Time</th>
                   <th className="py-1.5">Price</th>
@@ -156,9 +182,11 @@ export default async function CompetitorProductPage({
                       </td>
                       <td className="py-1.5">{s.availability ?? '—'}</td>
                       <td className="py-1.5">
-                        <Badge variant={s.status === 'ok' ? 'success' : 'destructive'}>{s.status}</Badge>
+                        <Badge variant={s.status === 'ok' ? 'success' : 'destructive'}>
+                          {s.status}
+                        </Badge>
                       </td>
-                      <td className="py-1.5 text-muted-foreground">{s.source}</td>
+                      <td className="text-muted-foreground py-1.5">{s.source}</td>
                     </tr>
                   ))}
               </tbody>

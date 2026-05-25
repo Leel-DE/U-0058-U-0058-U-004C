@@ -79,6 +79,31 @@ export async function fetchHtmlBrowser(
   try {
     const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
     const status = resp?.status() ?? 0;
+
+    // Accept cookies and close ad banners
+    await page.evaluate(() => {
+      try {
+        const textMatches = ['accept', 'принять', 'понятно', 'agree', 'согласен', 'ok', 'got it', 'close', 'закрыть'];
+        const elements = document.querySelectorAll('button, a, [role="button"]');
+        for (const el of elements) {
+          const text = (el.textContent || '').trim().toLowerCase();
+          const hasText = text && textMatches.some(m => text.includes(m));
+          const isCookieBtn = el.matches('[class*="cookie" i], [id*="cookie" i]');
+          if (hasText || isCookieBtn) {
+            try { (el as HTMLElement).click(); } catch(e) {}
+          }
+        }
+        // Remove fixed overlays that might block content (banners, modals)
+        const overlays = document.querySelectorAll('[class*="cookie" i], [id*="cookie" i], [class*="banner" i], [id*="banner" i], [class*="popup" i], [id*="popup" i], .modal, .overlay');
+        for (const el of overlays) {
+          const style = window.getComputedStyle(el);
+          if (style.position === 'fixed' || style.position === 'sticky' || parseInt(style.zIndex || '0', 10) > 50) {
+            el.remove();
+          }
+        }
+      } catch (e) {}
+    }).catch(() => null);
+
     // small wait for client-side rendered prices to appear
     await page
       .waitForLoadState('networkidle', { timeout: Math.min(8_000, timeoutMs / 2) })
@@ -126,6 +151,8 @@ export async function fetchHtmlBrowser(
       strategy: 'playwright',
     };
   } finally {
+    // Clear cookies to prevent tracking and state buildup across scrapes
+    await ctx.clearCookies().catch(() => null);
     await page.close().catch(() => null);
     if (opts.storageStateJson) await ctx.browser()?.close().catch(() => null);
     openPages = Math.max(0, openPages - 1);

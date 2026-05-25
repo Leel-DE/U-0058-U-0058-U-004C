@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { SkipForward } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import {
   getSiteDiscoveryStatus,
   pauseSiteDiscovery,
   resumeSiteDiscovery,
+  skipCurrentDiscoveryProduct,
 } from '@/server/actions/discovery';
 
 interface Status {
@@ -22,6 +24,7 @@ interface Status {
   errorsCount?: number;
   queueLength?: number;
   manualSession?: { status?: string; logs?: string[] } | null;
+  manualItem?: { url?: string; depth?: number; discoveredFrom?: string } | null;
 }
 
 export function DiscoveryProgress({ storeId, runId }: { storeId: string; runId: string }) {
@@ -47,14 +50,22 @@ export function DiscoveryProgress({ storeId, runId }: { storeId: string; runId: 
     return () => window.clearInterval(id);
   }, [terminal, refresh]);
 
-  function control(action: 'pause' | 'resume' | 'cancel') {
+  function control(action: 'pause' | 'resume' | 'skip' | 'cancel') {
     startTransition(async () => {
-      const fn = action === 'pause' ? pauseSiteDiscovery : action === 'resume' ? resumeSiteDiscovery : cancelSiteDiscovery;
+      const fn =
+        action === 'pause'
+          ? pauseSiteDiscovery
+          : action === 'resume'
+            ? resumeSiteDiscovery
+            : action === 'skip'
+              ? skipCurrentDiscoveryProduct
+              : cancelSiteDiscovery;
       const res = await fn({ storeId, runId });
       if (!res.ok) {
         toast.error(res.error.message);
         return;
       }
+      if (action === 'skip') toast.success('Product skipped');
       await refresh();
     });
   }
@@ -85,6 +96,11 @@ export function DiscoveryProgress({ storeId, runId }: { storeId: string; runId: 
           <p className="mt-1 text-muted-foreground">
             A local browser window should have opened. Complete the challenge there, then resume discovery.
           </p>
+          {status.manualItem?.url ? (
+            <div className="mt-2 break-all rounded border border-amber-400/30 bg-background/60 px-2 py-1 text-xs text-muted-foreground">
+              {status.manualItem.url}
+            </div>
+          ) : null}
           {status.manualSession?.logs?.length ? (
             <div className="mt-3 max-h-32 overflow-auto rounded border border-amber-400/30 bg-background/60 p-2 font-mono text-xs text-muted-foreground">
               {status.manualSession.logs.slice(-6).map((line, i) => (
@@ -92,9 +108,15 @@ export function DiscoveryProgress({ storeId, runId }: { storeId: string; runId: 
               ))}
             </div>
           ) : null}
-          <Button className="mt-3" onClick={() => control('resume')} disabled={pending}>
-            Continue after captcha
-          </Button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button onClick={() => control('resume')} disabled={pending}>
+              Continue after captcha
+            </Button>
+            <Button variant="outline" onClick={() => control('skip')} disabled={pending}>
+              <SkipForward className="mr-2 h-4 w-4" />
+              Skip product
+            </Button>
+          </div>
         </div>
       ) : null}
 

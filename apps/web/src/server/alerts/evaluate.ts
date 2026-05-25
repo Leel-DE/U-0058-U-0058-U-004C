@@ -3,7 +3,7 @@
  *  - evaluateAlertsForSnapshot — called after each new price/availability snapshot.
  *  - evaluateNoChangeAlerts — hourly sweep for "stale data" / "product disappeared".
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { db, schema } from '@/lib/db';
 import { dispatchNotification } from '@/server/notifications/dispatch';
@@ -151,7 +151,7 @@ async function evaluateOne(i: OneInput): Promise<Triggered | null> {
       const myProducts = await db()
         .select()
         .from(schema.myProducts)
-        .where(sql`id = ANY(${myProductIds})`);
+        .where(inArray(schema.myProducts.id, myProductIds));
       const triggered = myProducts.find(
         (mp) => mp.myPrice && Number(mp.myPrice) > change.newPrice!,
       );
@@ -171,7 +171,7 @@ async function evaluateOne(i: OneInput): Promise<Triggered | null> {
       const myProducts = await db()
         .select()
         .from(schema.myProducts)
-        .where(sql`id = ANY(${myProductIds})`);
+        .where(inArray(schema.myProducts.id, myProductIds));
       const tooHigh = myProducts.find((mp) => {
         if (!mp.myPrice) return false;
         const my = Number(mp.myPrice);

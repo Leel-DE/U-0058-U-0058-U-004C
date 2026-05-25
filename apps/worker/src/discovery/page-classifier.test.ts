@@ -50,4 +50,14 @@ describe('classifyDiscoveryPage', () => {
     </body></html>`;
     expect(classifyDiscoveryPage('https://x.test/login', html).pageType).toBe('captcha');
   });
+
+  it('does classify security verification interstitials as captcha', () => {
+    const html = `<html><head><title>www.fahrrad24.de</title></head><body>
+      <h1>www.fahrrad24.de</h1>
+      <h2>Performing security verification</h2>
+      <p>This website uses a security service to protect against malicious bots.</p>
+      <p>This page is displayed while the website verifies you are not a bot.</p>
+    </body></html>`;
+    expect(classifyDiscoveryPage('https://www.fahrrad24.de/', html).pageType).toBe('captcha');
+  });
 });

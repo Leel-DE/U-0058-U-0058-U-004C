@@ -1,6 +1,24 @@
 'use client';
 
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
+  chartAxisTick,
+  chartCursorStyle,
+  chartGridStroke,
+  chartLegendStyle,
+  chartTooltipItemStyle,
+  chartTooltipLabelStyle,
+  chartTooltipStyle,
+} from '@/components/analytics/chart-theme';
 import type { CompetitorAnalyticsRow } from '@/server/analytics/types';
 
 export function CompetitorAggressivenessChart({ data }: { data: CompetitorAnalyticsRow[] }) {
@@ -14,11 +32,24 @@ export function CompetitorAggressivenessChart({ data }: { data: CompetitorAnalyt
     <div className="h-80">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={rows}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
-          <XAxis dataKey="name" interval={0} angle={-20} height={72} tick={{ fontSize: 11 }} />
-          <YAxis width={52} />
-          <Tooltip />
-          <Legend />
+          <CartesianGrid stroke={chartGridStroke} strokeDasharray="3 3" opacity={0.55} />
+          <XAxis
+            dataKey="name"
+            interval={0}
+            angle={-20}
+            height={72}
+            tick={{ ...chartAxisTick, fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+          />
+          <YAxis width={52} tick={chartAxisTick} tickLine={false} axisLine={false} />
+          <Tooltip
+            contentStyle={chartTooltipStyle}
+            labelStyle={chartTooltipLabelStyle}
+            itemStyle={chartTooltipItemStyle}
+            cursor={chartCursorStyle}
+          />
+          <Legend wrapperStyle={chartLegendStyle} />
           <Bar dataKey="aggressiveness" fill="#ef4444" />
           <Bar dataKey="discount" fill="#f97316" />
           <Bar dataKey="stockRatio" fill="#22c55e" />

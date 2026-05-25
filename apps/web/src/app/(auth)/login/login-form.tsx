@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useRouter } from 'next/navigation';
-import { useTransition, use } from 'react';
+import { useTransition } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,11 +20,10 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export function LoginForm({
-  searchParamsPromise,
+  searchParams,
 }: {
-  searchParamsPromise: Promise<{ next?: string }>;
+  searchParams: { next?: string };
 }) {
-  const params = use(searchParamsPromise);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -43,7 +42,7 @@ export function LoginForm({
           return;
         }
         toast.success('Signed in');
-        router.replace(params.next ?? '/dashboard');
+        router.replace(searchParams.next ?? '/dashboard');
         router.refresh();
       } catch (error) {
         form.setError('root', { message: authErrorMessage(error) });

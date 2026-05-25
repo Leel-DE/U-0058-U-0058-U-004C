@@ -6,9 +6,9 @@ import {
   ExternalLink,
   GitCompare,
   Globe,
-  PackageSearch,
   TrendingDown,
 } from 'lucide-react';
+import { ProductImage } from '@/components/product-image';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -67,6 +67,8 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 }
 
 function ProductHeader({ product }: { product: ProductDetail }) {
+  const imageUrl =
+    product.imageUrl ?? product.competitors.find((row) => row.imageUrl)?.imageUrl ?? null;
   const specs = [
     product.specs.year,
     product.specs.bikeType,
@@ -77,15 +79,14 @@ function ProductHeader({ product }: { product: ProductDetail }) {
   ].filter(Boolean);
   return (
     <header className="grid gap-5 xl:grid-cols-[220px_1fr_320px]">
-      <div className="flex h-56 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-        {product.imageUrl ? (
-          <span
-            className="h-full w-full bg-contain bg-center bg-no-repeat"
-            style={{ backgroundImage: `url("${product.imageUrl.replace(/"/g, '%22')}")` }}
-            aria-hidden="true"
-          />
-        ) : <PackageSearch className="h-12 w-12 text-muted-foreground" />}
-      </div>
+      <ProductImage
+        src={imageUrl}
+        className="h-56 w-full rounded-lg"
+        imageClassName="object-contain p-3"
+        iconClassName="h-12 w-12"
+        sizes="220px"
+        priority
+      />
       <div className="space-y-3">
         <div className="flex flex-wrap gap-2">
           <Badge variant={product.entityType === 'normalized' ? 'success' : 'secondary'}>
@@ -96,21 +97,32 @@ function ProductHeader({ product }: { product: ProductDetail }) {
             <Badge variant="default">{product.competitors.length} stores tracked</Badge>
           ) : null}
         </div>
-        <h1 className="max-w-5xl text-2xl font-semibold tracking-tight">{product.canonicalTitle}</h1>
-        <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
+        <h1 className="max-w-5xl text-2xl font-semibold tracking-tight">
+          {product.canonicalTitle}
+        </h1>
+        <div className="text-muted-foreground flex flex-wrap gap-3 text-sm">
           <span>{product.brand ?? 'Unknown brand'}</span>
           <span>{product.category ?? 'Uncategorized'}</span>
           <span>{product.competitorsCount} competitors</span>
           <span>updated {timeAgo(product.lastUpdated)}</span>
           {product.url ? (
-            <a className="inline-flex items-center gap-1 hover:underline" href={product.url} target="_blank" rel="noreferrer">
+            <a
+              className="inline-flex items-center gap-1 hover:underline"
+              href={product.url}
+              target="_blank"
+              rel="noreferrer"
+            >
               <Globe className="h-3.5 w-3.5" /> My URL
             </a>
           ) : null}
         </div>
         {specs.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {specs.map((spec) => <Badge key={String(spec)} variant="outline">{spec}</Badge>)}
+            {specs.map((spec) => (
+              <Badge key={String(spec)} variant="outline">
+                {spec}
+              </Badge>
+            ))}
           </div>
         ) : null}
       </div>
@@ -122,12 +134,23 @@ function ProductHeader({ product }: { product: ProductDetail }) {
 function ProductActionsCard({ product }: { product: ProductDetail }) {
   return (
     <Card>
-      <CardHeader><CardTitle className="text-base">Actions</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle className="text-base">Actions</CardTitle>
+      </CardHeader>
       <CardContent className="grid gap-2">
-        <Button asChild variant="outline"><Link href={`/products/compare?ids=${product.id}`}><GitCompare className="mr-2 h-4 w-4" />Open compare</Link></Button>
+        <Button asChild variant="outline">
+          <Link href={`/products/compare?ids=${product.id}`}>
+            <GitCompare className="mr-2 h-4 w-4" />
+            Open compare
+          </Link>
+        </Button>
         <OpenAllListingsButton competitors={product.competitors} />
-        <Button asChild variant="outline"><Link href="/matches">Manual match</Link></Button>
-        <Button asChild variant="outline"><Link href="/exports">Export intelligence</Link></Button>
+        <Button asChild variant="outline">
+          <Link href="/matches">Manual match</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/exports">Export intelligence</Link>
+        </Button>
       </CardContent>
     </Card>
   );
@@ -141,13 +164,27 @@ function MarketOverview({ product }: { product: ProductDetail }) {
       : null;
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
-      <Metric label="Cheapest competitor" value={product.overview.cheapestCompetitor ?? '—'} sub={formatCurrency(product.overview.minPrice, currency)} />
-      <Metric label="Highest price" value={formatCurrency(product.overview.highestPrice, currency)} />
-      <Metric label="Average price" value={formatCurrency(product.overview.averagePrice, currency)} />
+      <Metric
+        label="Cheapest competitor"
+        value={product.overview.cheapestCompetitor ?? '—'}
+        sub={formatCurrency(product.overview.minPrice, currency)}
+      />
+      <Metric
+        label="Highest price"
+        value={formatCurrency(product.overview.highestPrice, currency)}
+      />
+      <Metric
+        label="Average price"
+        value={formatCurrency(product.overview.averagePrice, currency)}
+      />
       <Metric
         label="Spread"
         value={formatCurrency(product.overview.competitorSpread, currency)}
-        sub={product.overview.spreadPct == null ? undefined : `${product.overview.spreadPct.toFixed(1)}% range`}
+        sub={
+          product.overview.spreadPct == null
+            ? undefined
+            : `${product.overview.spreadPct.toFixed(1)}% range`
+        }
       />
       <Metric label="Current discount" value={formatPct(product.overview.currentDiscountPct)} />
       <Metric
@@ -179,11 +216,13 @@ function CompetitorComparison({ product }: { product: ProductDetail }) {
     <Card>
       <CardHeader>
         <CardTitle>Competitor comparison</CardTitle>
-        <CardDescription>Current live market position for each linked competitor product.</CardDescription>
+        <CardDescription>
+          Current live market position for each linked competitor product.
+        </CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto p-0">
         <table className="w-full min-w-[1100px] text-sm">
-          <thead className="border-y bg-muted/30 text-left text-xs uppercase text-muted-foreground">
+          <thead className="bg-muted/30 text-muted-foreground border-y text-left text-xs uppercase">
             <tr>
               <th className="px-4 py-2">Competitor</th>
               <th className="px-4 py-2">Price</th>
@@ -208,7 +247,13 @@ function CompetitorComparison({ product }: { product: ProductDetail }) {
   );
 }
 
-function CompetitorRow({ row, cheapest }: { row: ProductCompetitorComparison; cheapest: number | null }) {
+function CompetitorRow({
+  row,
+  cheapest,
+}: {
+  row: ProductCompetitorComparison;
+  cheapest: number | null;
+}) {
   const deltaVsCheapest =
     row.currentPrice != null && cheapest != null && cheapest > 0
       ? ((row.currentPrice - cheapest) / cheapest) * 100
@@ -219,19 +264,25 @@ function CompetitorRow({ row, cheapest }: { row: ProductCompetitorComparison; ch
       <td className="px-4 py-3">
         <div className="flex items-start gap-2">
           {row.imageUrl ? (
-            <span
-              className="h-10 w-10 shrink-0 rounded border bg-muted bg-contain bg-center bg-no-repeat"
-              style={{ backgroundImage: `url("${row.imageUrl.replace(/"/g, '%22')}")` }}
-              aria-hidden="true"
+            <ProductImage
+              src={row.imageUrl}
+              className="h-10 w-10"
+              imageClassName="object-contain p-0.5"
+              sizes="40px"
             />
-          ) : null}
+          ) : (
+            <ProductImage src={null} className="h-10 w-10" sizes="40px" />
+          )}
           <div className="min-w-0">
-            <Link href={`/competitors/products/${row.competitorProductId}`} className="font-medium hover:underline">
+            <Link
+              href={`/competitors/products/${row.competitorProductId}`}
+              className="font-medium hover:underline"
+            >
               {row.competitorName}
             </Link>
-            <div className="line-clamp-1 text-xs text-muted-foreground">{row.title}</div>
+            <div className="text-muted-foreground line-clamp-1 text-xs">{row.title}</div>
             {row.competitorDomain ? (
-              <div className="text-[11px] text-muted-foreground">{row.competitorDomain}</div>
+              <div className="text-muted-foreground text-[11px]">{row.competitorDomain}</div>
             ) : null}
           </div>
         </div>
@@ -254,21 +305,37 @@ function CompetitorRow({ row, cheapest }: { row: ProductCompetitorComparison; ch
       </td>
       <td className="px-4 py-3 tabular-nums">
         {row.oldPrice != null ? (
-          <div className="text-muted-foreground line-through">{formatCurrency(row.oldPrice, row.currency)}</div>
-        ) : <span className="text-muted-foreground">—</span>}
-        {row.discountPct != null ? <Badge variant="warning">{formatPct(row.discountPct)}</Badge> : null}
+          <div className="text-muted-foreground line-through">
+            {formatCurrency(row.oldPrice, row.currency)}
+          </div>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+        {row.discountPct != null ? (
+          <Badge variant="warning">{formatPct(row.discountPct)}</Badge>
+        ) : null}
       </td>
       <td className="px-4 py-3">
         <AvailabilityBadge value={row.availability} />
       </td>
-      <td className="px-4 py-3 text-xs text-muted-foreground">{row.shipping ?? '—'}</td>
+      <td className="text-muted-foreground px-4 py-3 text-xs">{row.shipping ?? '—'}</td>
       <td className="px-4 py-3 text-xs">
-        {row.sku ? <div>SKU: <span className="font-mono">{row.sku}</span></div> : null}
-        {row.gtin ? <div>GTIN: <span className="font-mono">{row.gtin}</span></div> : null}
+        {row.sku ? (
+          <div>
+            SKU: <span className="font-mono">{row.sku}</span>
+          </div>
+        ) : null}
+        {row.gtin ? (
+          <div>
+            GTIN: <span className="font-mono">{row.gtin}</span>
+          </div>
+        ) : null}
         {!row.sku && !row.gtin ? <span className="text-muted-foreground">—</span> : null}
       </td>
-      <td className="px-4 py-3 text-muted-foreground">{timeAgo(row.lastUpdate)}</td>
-      <td className="px-4 py-3 tabular-nums">{row.confidence == null ? '—' : `${Math.round(row.confidence * 100)}%`}</td>
+      <td className="text-muted-foreground px-4 py-3">{timeAgo(row.lastUpdate)}</td>
+      <td className="px-4 py-3 tabular-nums">
+        {row.confidence == null ? '—' : `${Math.round(row.confidence * 100)}%`}
+      </td>
       <td className="px-4 py-3">
         <a href={row.url} target="_blank" rel="noreferrer" aria-label="Open competitor URL">
           <ExternalLink className="h-4 w-4" />
@@ -301,29 +368,41 @@ function IdentifiersCard({ product }: { product: ProductDetail }) {
         <IdentifierRow label="GTIN / EAN" value={id.gtin} copy />
         {id.competitorSkus.length > 0 ? (
           <div>
-            <div className="text-xs uppercase text-muted-foreground">Competitor SKUs</div>
+            <div className="text-muted-foreground text-xs uppercase">Competitor SKUs</div>
             <div className="mt-1 flex flex-wrap gap-1">
               {id.competitorSkus.slice(0, 8).map((sku) => (
-                <CopyableValue key={sku} value={sku} className="rounded-md border bg-muted/30 px-2 py-0.5 font-mono text-xs" />
+                <CopyableValue
+                  key={sku}
+                  value={sku}
+                  className="bg-muted/30 rounded-md border px-2 py-0.5 font-mono text-xs"
+                />
               ))}
             </div>
           </div>
         ) : null}
         {id.competitorGtins.length > 0 ? (
           <div>
-            <div className="text-xs uppercase text-muted-foreground">Competitor GTINs</div>
+            <div className="text-muted-foreground text-xs uppercase">Competitor GTINs</div>
             <div className="mt-1 flex flex-wrap gap-1">
               {id.competitorGtins.slice(0, 8).map((gtin) => (
-                <CopyableValue key={gtin} value={gtin} className="rounded-md border bg-muted/30 px-2 py-0.5 font-mono text-xs" />
+                <CopyableValue
+                  key={gtin}
+                  value={gtin}
+                  className="bg-muted/30 rounded-md border px-2 py-0.5 font-mono text-xs"
+                />
               ))}
             </div>
           </div>
         ) : null}
         {aliases.length > 0 ? (
           <div>
-            <div className="text-xs uppercase text-muted-foreground">Listed as</div>
-            <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs text-muted-foreground">
-              {aliases.map((alias) => <li key={alias} className="line-clamp-1">{alias}</li>)}
+            <div className="text-muted-foreground text-xs uppercase">Listed as</div>
+            <ul className="text-muted-foreground mt-1 list-inside list-disc space-y-0.5 text-xs">
+              {aliases.map((alias) => (
+                <li key={alias} className="line-clamp-1">
+                  {alias}
+                </li>
+              ))}
             </ul>
           </div>
         ) : null}
@@ -332,18 +411,29 @@ function IdentifiersCard({ product }: { product: ProductDetail }) {
   );
 }
 
-function IdentifierRow({ label, value, copy }: { label: string; value: string | null | undefined; copy?: boolean }) {
+function IdentifierRow({
+  label,
+  value,
+  copy,
+}: {
+  label: string;
+  value: string | null | undefined;
+  copy?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-xs uppercase text-muted-foreground">{label}</span>
+      <span className="text-muted-foreground text-xs uppercase">{label}</span>
       {value ? (
         copy ? (
-          <CopyableValue value={value} className="rounded-md border bg-muted/30 px-2 py-0.5 font-mono text-xs" />
+          <CopyableValue
+            value={value}
+            className="bg-muted/30 rounded-md border px-2 py-0.5 font-mono text-xs"
+          />
         ) : (
           <span className="text-sm font-medium">{value}</span>
         )
       ) : (
-        <span className="text-xs text-muted-foreground">—</span>
+        <span className="text-muted-foreground text-xs">—</span>
       )}
     </div>
   );
@@ -353,7 +443,7 @@ function PriceStatsCard({ stats, currency }: { stats: ProductPriceStats; currenc
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2 text-base">
           <TrendingDown className="h-4 w-4" /> Historical price stats
         </CardTitle>
         <CardDescription>Aggregates from up to 180 days of snapshots.</CardDescription>
@@ -376,7 +466,7 @@ function PriceStatsCard({ stats, currency }: { stats: ProductPriceStats; currenc
 function StatBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border p-2">
-      <div className="text-xs uppercase text-muted-foreground">{label}</div>
+      <div className="text-muted-foreground text-xs uppercase">{label}</div>
       <div className="mt-1 truncate text-sm font-semibold tabular-nums">{value}</div>
     </div>
   );
@@ -388,7 +478,9 @@ function HistoricalCharts({ product }: { product: ProductDetail }) {
       <Card>
         <CardHeader>
           <CardTitle>Price timeline</CardTitle>
-          <CardDescription>No historical price snapshots captured for this product yet.</CardDescription>
+          <CardDescription>
+            No historical price snapshots captured for this product yet.
+          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -400,29 +492,51 @@ function HistoricalCharts({ product }: { product: ProductDetail }) {
           <CardTitle>Price timeline</CardTitle>
           <CardDescription>Multi-competitor overlay with brush zoom.</CardDescription>
         </CardHeader>
-        <CardContent><ProductPriceTimeline data={product.priceTimeline} /></CardContent>
+        <CardContent>
+          <ProductPriceTimeline data={product.priceTimeline} />
+        </CardContent>
       </Card>
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle>Price spread</CardTitle></CardHeader>
-          <CardContent><ProductSpreadChart data={product.spreadTimeline} /></CardContent>
+          <CardHeader>
+            <CardTitle>Price spread</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ProductSpreadChart data={product.spreadTimeline} />
+          </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Discount timeline</CardTitle></CardHeader>
-          <CardContent><DiscountTimeline data={product.priceTimeline} /></CardContent>
+          <CardHeader>
+            <CardTitle>Discount timeline</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DiscountTimeline data={product.priceTimeline} />
+          </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Availability timeline</CardTitle></CardHeader>
-          <CardContent><AvailabilityTimeline data={product.priceTimeline} /></CardContent>
+          <CardHeader>
+            <CardTitle>Availability timeline</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AvailabilityTimeline data={product.priceTimeline} />
+          </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Cheapest seller rotation</CardTitle></CardHeader>
-          <CardContent><CheapestRotationChart data={product.priceTimeline} /></CardContent>
+          <CardHeader>
+            <CardTitle>Cheapest seller rotation</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CheapestRotationChart data={product.priceTimeline} />
+          </CardContent>
         </Card>
       </div>
       <Card>
-        <CardHeader><CardTitle>Competitor activity heatmap</CardTitle></CardHeader>
-        <CardContent><CompetitorActivityHeatmap data={product.priceTimeline} /></CardContent>
+        <CardHeader>
+          <CardTitle>Competitor activity heatmap</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CompetitorActivityHeatmap data={product.priceTimeline} />
+        </CardContent>
       </Card>
     </div>
   );
@@ -433,17 +547,23 @@ function SnapshotTimeline({ events }: { events: ProductEvent[] }) {
     <Card>
       <CardHeader>
         <CardTitle>Snapshot timeline</CardTitle>
-        <CardDescription>Price changes, stock changes, extraction warnings, latest snapshots, and match events.</CardDescription>
+        <CardDescription>
+          Price changes, stock changes, extraction warnings, latest snapshots, and match events.
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        {events.length === 0 ? <p className="text-sm text-muted-foreground">No timeline events captured yet.</p> : (
+        {events.length === 0 ? (
+          <p className="text-muted-foreground text-sm">No timeline events captured yet.</p>
+        ) : (
           <div className="space-y-3">
             {events.map((event) => (
               <div key={event.id} className="flex gap-3">
                 <EventIcon event={event} />
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{event.label}</div>
-                  <div className="text-xs text-muted-foreground">{event.type.replace(/_/g, ' ')} · {timeAgo(event.timestamp)}</div>
+                  <div className="text-muted-foreground text-xs">
+                    {event.type.replace(/_/g, ' ')} · {timeAgo(event.timestamp)}
+                  </div>
                   <Separator className="mt-3" />
                 </div>
               </div>
@@ -458,21 +578,41 @@ function SnapshotTimeline({ events }: { events: ProductEvent[] }) {
 function EventIcon({ event }: { event: ProductEvent }) {
   const critical = event.status === 'critical' || event.type === 'selector_issue';
   return (
-    <span className={`mt-1 ${critical ? 'text-destructive' : event.status === 'success' ? 'text-success' : 'text-muted-foreground'}`}>
+    <span
+      className={`mt-1 ${critical ? 'text-destructive' : event.status === 'success' ? 'text-success' : 'text-muted-foreground'}`}
+    >
       {critical ? <AlertTriangle className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
     </span>
   );
 }
 
-function Metric({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'good' | 'warning' | 'critical' }) {
+function Metric({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: 'good' | 'warning' | 'critical';
+}) {
   const toneClass =
-    tone === 'good' ? 'text-success' : tone === 'warning' ? 'text-warning' : tone === 'critical' ? 'text-destructive' : '';
+    tone === 'good'
+      ? 'text-success'
+      : tone === 'warning'
+        ? 'text-warning'
+        : tone === 'critical'
+          ? 'text-destructive'
+          : '';
   return (
     <Card>
       <CardContent className="p-4">
-        <div className="text-xs uppercase text-muted-foreground">{label}</div>
-        <div className={`mt-1 truncate text-xl font-semibold tabular-nums ${toneClass}`}>{value}</div>
-        {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
+        <div className="text-muted-foreground text-xs uppercase">{label}</div>
+        <div className={`mt-1 truncate text-xl font-semibold tabular-nums ${toneClass}`}>
+          {value}
+        </div>
+        {sub ? <div className="text-muted-foreground mt-1 text-xs">{sub}</div> : null}
       </CardContent>
     </Card>
   );

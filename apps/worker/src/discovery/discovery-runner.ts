@@ -13,6 +13,7 @@ import {
   cancelManualSession,
   completeManualSession,
   continueManualSession,
+  getDomainStorageState,
   navigateInManualSession,
   sessionStatus,
   startManualSession,
@@ -489,8 +490,18 @@ async function processQueueItem(run: DiscoveryRunState, item: QueueItem) {
 
   await throttleByDomain(domain, PER_DOMAIN_DELAY_MS);
   let fetched;
+  const cachedStorageState = getDomainStorageState(domain);
   try {
-    fetched = await fetchHtml(item.url, run.options.userAgent, DEFAULT_TIMEOUT_MS);
+    if (run.options.jsRequired || cachedStorageState) {
+      fetched = await fetchHtmlBrowser(
+        item.url,
+        run.options.userAgent,
+        45_000,
+        cachedStorageState ? { storageStateJson: cachedStorageState } : undefined,
+      );
+    } else {
+      fetched = await fetchHtml(item.url, run.options.userAgent, DEFAULT_TIMEOUT_MS);
+    }
   } catch (err) {
     recordPage(run, item, { status: 'error', error: (err as Error).message, crawledAt: new Date().toISOString() });
     log(run, 'error', 'Fetch failed', { url: item.url, error: (err as Error).message });
@@ -518,6 +529,7 @@ async function processQueueItem(run: DiscoveryRunState, item: QueueItem) {
     const cheerioLen = fetched.html.length;
     try {
       const pw = await fetchHtmlBrowser(item.url, run.options.userAgent, 30_000, {
+        storageStateJson: cachedStorageState,
         // Wait until the empty container actually has children populated by
         // the site's JS (Tilda fires an XHR to /products after window.load).
         waitForChildrenIn: shell.emptyContainerSelector,
@@ -679,6 +691,48 @@ export async function resumeDiscoveryRun(id: string) {
   return discoveryStatus(id);
 }
 
+export async function skipCurrentDiscoveryItem(id: string) {
+  const run = runs.get(id);
+  if (!run) return null;
+  if (run.status !== 'manual_action_required' || !run.manualQueueItem) {
+    return discoveryStatus(id);
+  }
+
+  const item = run.manualQueueItem;
+  const sessionId = run.manualSessionId;
+  const domain = domainOf(item.url);
+  recordPage(run, item, {
+    status: 'skipped',
+    pageType: isLikelyProductUrl(item.url) ? 'product' : 'unknown',
+    error: 'skipped by user during manual captcha',
+    crawledAt: new Date().toISOString(),
+  });
+  log(run, 'warn', 'Skipped current discovery item after manual action prompt', {
+    url: item.url,
+    sessionId,
+  });
+
+  if (sessionId) {
+    recordActivity(sessionId, { pendingUrlsCount: -1 });
+    if (run.domainSessions.get(domain) === sessionId) run.domainSessions.delete(domain);
+    await cancelManualSession(sessionId).catch((err) =>
+      log(run, 'warn', 'Failed to close skipped manual session', {
+        sessionId,
+        error: (err as Error).message,
+      }),
+    );
+  }
+
+  run.manualSessionId = undefined;
+  run.manualQueueItem = undefined;
+  run.pauseRequested = false;
+  if (!run.abortRequested) {
+    run.status = 'running';
+    void runLoop(run);
+  }
+  return discoveryStatus(id);
+}
+
 export async function pauseDiscoveryRun(id: string) {
   const run = runs.get(id);
   if (!run) return null;
@@ -715,6 +769,13 @@ export function discoveryStatus(id: string) {
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,
     manualSession: run.manualSessionId ? sessionStatus(run.manualSessionId) : null,
+    manualItem: run.manualQueueItem
+      ? {
+          url: run.manualQueueItem.url,
+          depth: run.manualQueueItem.depth,
+          discoveredFrom: run.manualQueueItem.discoveredFrom,
+        }
+      : null,
     queueLength: run.queue.length,
     ...counters(run),
   };

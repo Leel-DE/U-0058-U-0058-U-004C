@@ -2,19 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import {
-  ArrowDown,
-  ArrowUp,
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  PackageSearch,
-  Store,
-} from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ExternalLink, Store } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { ProductImage } from '@/components/product-image';
 import { formatCurrency, formatPct, timeAgo } from '@/lib/utils';
 import type {
   ProductCluster,
@@ -82,8 +75,9 @@ export function ProductsClusterTable({ clusters, page, pageSize, total }: Props)
           <div className="space-y-1">
             <CardTitle>Product intelligence groups</CardTitle>
             <CardDescription>
-              {clusters.length.toLocaleString()} groups · {totalListings.toLocaleString()} listings ·{' '}
-              {multiStoreCount.toLocaleString()} sold by 2+ stores · server-paginated at {pageSize} rows ({total.toLocaleString()} entities).
+              {clusters.length.toLocaleString()} groups · {totalListings.toLocaleString()} listings
+              · {multiStoreCount.toLocaleString()} sold by 2+ stores · server-paginated at{' '}
+              {pageSize} rows ({total.toLocaleString()} entities).
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -96,7 +90,7 @@ export function ProductsClusterTable({ clusters, page, pageSize, total }: Props)
             <select
               value={sortKey}
               onChange={(event) => setSortKey(event.target.value as SortKey)}
-              className="h-9 rounded-md border bg-background px-3 text-sm"
+              className="bg-background h-9 rounded-md border px-3 text-sm"
             >
               <option value="stores">Most stores</option>
               <option value="savings">Best savings</option>
@@ -114,7 +108,7 @@ export function ProductsClusterTable({ clusters, page, pageSize, total }: Props)
       </CardHeader>
       <CardContent className="overflow-x-auto p-0">
         <table className="w-full min-w-[1400px] text-sm">
-          <thead className="border-y bg-muted/30 text-left text-xs uppercase text-muted-foreground">
+          <thead className="bg-muted/30 text-muted-foreground border-y text-left text-xs uppercase">
             <tr>
               <th className="w-10 px-2" aria-label="Expand" />
               <th className="px-3 py-2">Product</th>
@@ -132,7 +126,7 @@ export function ProductsClusterTable({ clusters, page, pageSize, total }: Props)
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-6 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={11} className="text-muted-foreground px-6 py-10 text-center text-sm">
                   No groups match your filter.
                 </td>
               </tr>
@@ -163,13 +157,15 @@ function ClusterRow({
   onToggle: () => void;
 }) {
   const rep = cluster.representative;
+  const imageUrl =
+    rep.imageUrl ?? cluster.members.find((member) => member.imageUrl)?.imageUrl ?? null;
   const expandable = cluster.members.length > 0;
   return (
     <>
       <tr
         className={
           'border-b last:border-0 ' +
-          (expandable ? 'cursor-pointer hover:bg-muted/40' : 'hover:bg-muted/20')
+          (expandable ? 'hover:bg-muted/40 cursor-pointer' : 'hover:bg-muted/20')
         }
         onClick={expandable ? onToggle : undefined}
       >
@@ -177,20 +173,24 @@ function ClusterRow({
           {expandable ? (
             <button
               type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-md border bg-background text-muted-foreground hover:text-foreground"
+              className="bg-background text-muted-foreground hover:text-foreground flex h-6 w-6 items-center justify-center rounded-md border"
               onClick={(event) => {
                 event.stopPropagation();
                 onToggle();
               }}
               aria-label={expanded ? 'Collapse group' : 'Expand group'}
             >
-              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              {expanded ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
             </button>
           ) : null}
         </td>
         <td className="px-3 py-3 align-top">
           <div className="flex items-start gap-3">
-            <ProductImage url={rep.imageUrl} />
+            <ProductImage src={imageUrl} className="h-12 w-12" sizes="48px" />
             <div className="min-w-0">
               <Link
                 href={`/products/${rep.id}`}
@@ -224,7 +224,7 @@ function ClusterRow({
               <span className="text-muted-foreground">Unknown brand</span>
             )}
           </div>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-muted-foreground text-xs">
             {rep.category ? (
               <Link
                 href={`/products/categories/${encodeURIComponent(rep.category)}`}
@@ -240,32 +240,39 @@ function ClusterRow({
         </td>
         <td className="px-3 py-3 align-top">
           <div className="flex items-center gap-1.5 tabular-nums">
-            <Store className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+            <Store className="text-muted-foreground h-3.5 w-3.5" aria-hidden="true" />
             <span className="font-semibold">{cluster.storeCount}</span>
           </div>
-          <div className="text-xs text-muted-foreground">{cluster.members.length} listings</div>
+          <div className="text-muted-foreground text-xs">{cluster.members.length} listings</div>
         </td>
         <td className="px-3 py-3 align-top">
           {cluster.cheapestStoreName ? (
             <div className="space-y-1">
               <div className="text-sm font-medium">{cluster.cheapestStoreName}</div>
-              <div className="text-xs text-success">{formatCurrency(cluster.minPrice, cluster.currency)}</div>
+              <div className="text-success text-xs">
+                {formatCurrency(cluster.minPrice, cluster.currency)}
+              </div>
             </div>
           ) : (
-            <span className="text-xs text-muted-foreground">No price</span>
+            <span className="text-muted-foreground text-xs">No price</span>
           )}
         </td>
         <td className="px-3 py-3 align-top tabular-nums">
           <div>{formatCurrency(cluster.minPrice, cluster.currency)}</div>
-          <div className="text-xs text-muted-foreground">
-            {formatCurrency(cluster.avgPrice, cluster.currency)} · {formatCurrency(cluster.maxPrice, cluster.currency)}
+          <div className="text-muted-foreground text-xs">
+            {formatCurrency(cluster.avgPrice, cluster.currency)} ·{' '}
+            {formatCurrency(cluster.maxPrice, cluster.currency)}
           </div>
         </td>
         <td className="px-3 py-3 align-top tabular-nums">
           <SavingsCell pct={cluster.savingsPct} />
         </td>
         <td className="px-3 py-3 align-top">
-          <StockSummary status={rep.stockStatus} inStock={cluster.inStockStores} outOfStock={cluster.outOfStockStores} />
+          <StockSummary
+            status={rep.stockStatus}
+            inStock={cluster.inStockStores}
+            outOfStock={cluster.outOfStockStores}
+          />
         </td>
         <td className="px-3 py-3 align-top">
           <TrendCell trend={rep.marketTrend} data={rep.sparkline} />
@@ -273,7 +280,9 @@ function ClusterRow({
         <td className="px-3 py-3 align-top">
           <VolatilityBadge value={rep.volatility} />
         </td>
-        <td className="px-3 py-3 align-top text-muted-foreground">{timeAgo(cluster.lastChange ?? rep.updatedAt)}</td>
+        <td className="text-muted-foreground px-3 py-3 align-top">
+          {timeAgo(cluster.lastChange ?? rep.updatedAt)}
+        </td>
       </tr>
       {expanded && expandable ? (
         <tr className="bg-muted/10">
@@ -290,8 +299,8 @@ function ClusterRow({
 function MembersPanel({ cluster }: { cluster: ProductCluster }) {
   const minPrice = cluster.minPrice;
   return (
-    <div className="rounded-md border bg-background">
-      <div className="grid grid-cols-[minmax(180px,1.4fr)_minmax(220px,1fr)_minmax(110px,0.7fr)_minmax(110px,0.7fr)_minmax(130px,0.8fr)_minmax(110px,0.6fr)_minmax(120px,0.6fr)] gap-3 border-b bg-muted/30 px-3 py-2 text-[11px] uppercase text-muted-foreground">
+    <div className="bg-background rounded-md border">
+      <div className="bg-muted/30 text-muted-foreground grid grid-cols-[minmax(170px,1.05fr)_minmax(0,1.65fr)_96px_90px_116px_104px_96px] gap-3 border-b px-3 py-2 text-[11px] uppercase">
         <span>Store</span>
         <span>Listing</span>
         <span>Price</span>
@@ -307,7 +316,13 @@ function MembersPanel({ cluster }: { cluster: ProductCluster }) {
   );
 }
 
-function MemberRow({ member, cheapestPrice }: { member: ProductStoreMember; cheapestPrice: number | null }) {
+function MemberRow({
+  member,
+  cheapestPrice,
+}: {
+  member: ProductStoreMember;
+  cheapestPrice: number | null;
+}) {
   const delta =
     cheapestPrice != null && member.price != null && cheapestPrice > 0
       ? ((member.price - cheapestPrice) / cheapestPrice) * 100
@@ -318,44 +333,47 @@ function MemberRow({ member, cheapestPrice }: { member: ProductStoreMember; chea
       : null;
   const isCheapest = cheapestPrice != null && member.price === cheapestPrice;
   return (
-    <div className="grid grid-cols-[minmax(180px,1.4fr)_minmax(220px,1fr)_minmax(110px,0.7fr)_minmax(110px,0.7fr)_minmax(130px,0.8fr)_minmax(110px,0.6fr)_minmax(120px,0.6fr)] items-center gap-3 border-b px-3 py-2.5 text-sm last:border-0">
-      <div className="flex items-center gap-2 min-w-0">
-        <ProductImage url={member.imageUrl} size="sm" />
+    <div className="grid grid-cols-[minmax(170px,1.05fr)_minmax(0,1.65fr)_96px_90px_116px_104px_96px] items-center gap-3 border-b px-3 py-2.5 text-sm last:border-0">
+      <div className="flex min-w-0 items-center gap-2">
+        <ProductImage src={member.imageUrl} className="h-8 w-8" sizes="32px" />
         <div className="min-w-0">
           <div className="truncate font-medium">{member.storeName}</div>
           {isCheapest ? <Badge variant="success">cheapest</Badge> : null}
         </div>
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 overflow-hidden">
         {member.url ? (
           <a
             href={member.url}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground hover:underline"
+            className="text-muted-foreground hover:text-foreground flex min-w-0 max-w-full items-center gap-1 text-xs hover:underline"
             onClick={(event) => event.stopPropagation()}
+            title={member.title}
           >
-            <span className="truncate">{member.title}</span>
+            <span className="block min-w-0 flex-1 truncate">{member.title}</span>
             <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
           </a>
         ) : (
-          <span className="truncate text-xs text-muted-foreground">{member.title}</span>
+          <span className="text-muted-foreground block truncate text-xs" title={member.title}>
+            {member.title}
+          </span>
         )}
       </div>
-      <div className="tabular-nums">
+      <div className="min-w-0 tabular-nums">
         <div className="font-medium">{formatCurrency(member.price, member.currency)}</div>
         {discount != null ? (
-          <div className="text-xs text-success">−{discount.toFixed(0)}%</div>
+          <div className="text-success text-xs">−{discount.toFixed(0)}%</div>
         ) : null}
       </div>
-      <div className="tabular-nums text-muted-foreground">
+      <div className="text-muted-foreground min-w-0 tabular-nums">
         {member.oldPrice != null ? (
           <span className="line-through">{formatCurrency(member.oldPrice, member.currency)}</span>
         ) : (
           <span>—</span>
         )}
       </div>
-      <div className="tabular-nums">
+      <div className="min-w-0 tabular-nums">
         {delta == null ? (
           <span className="text-muted-foreground">—</span>
         ) : delta === 0 ? (
@@ -367,27 +385,12 @@ function MemberRow({ member, cheapestPrice }: { member: ProductStoreMember; chea
           </span>
         )}
       </div>
-      <div>
+      <div className="min-w-0">
         <AvailabilityBadge value={member.availability} />
       </div>
-      <div className="text-xs text-muted-foreground">{timeAgo(member.lastScrapedAt)}</div>
-    </div>
-  );
-}
-
-function ProductImage({ url, size = 'md' }: { url: string | null; size?: 'sm' | 'md' }) {
-  const sizeClass = size === 'sm' ? 'h-8 w-8' : 'h-12 w-12';
-  return (
-    <div className={`${sizeClass} flex shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted`}>
-      {url ? (
-        <span
-          className="h-full w-full bg-contain bg-center bg-no-repeat"
-          style={{ backgroundImage: `url("${url.replace(/"/g, '%22')}")` }}
-          aria-hidden="true"
-        />
-      ) : (
-        <PackageSearch className="h-4 w-4 text-muted-foreground" />
-      )}
+      <div className="text-muted-foreground min-w-0 truncate text-xs">
+        {timeAgo(member.lastScrapedAt)}
+      </div>
     </div>
   );
 }
@@ -421,7 +424,7 @@ function StockSummary({
     <div className="space-y-1">
       <Badge variant={variant}>{status.replace(/_/g, ' ')}</Badge>
       {inStock + outOfStock > 0 ? (
-        <div className="text-xs text-muted-foreground tabular-nums">
+        <div className="text-muted-foreground text-xs tabular-nums">
           {inStock} in · {outOfStock} out
         </div>
       ) : null}
@@ -435,7 +438,13 @@ function AvailabilityBadge({ value }: { value: string | null }) {
   return <Badge variant="secondary">unknown</Badge>;
 }
 
-function TrendCell({ trend, data }: { trend: ProductTrend; data: { date: string; price: number | null }[] }) {
+function TrendCell({
+  trend,
+  data,
+}: {
+  trend: ProductTrend;
+  data: { date: string; price: number | null }[];
+}) {
   const icon =
     trend === 'falling' ? (
       <ArrowDown className="h-3.5 w-3.5" />

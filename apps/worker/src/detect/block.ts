@@ -16,6 +16,9 @@ const LOOSE_CAPTCHA_HINTS: RegExp[] = [
   /are you (a )?human/i,
   /cloudflare ray id/i,
   /verifying you are human/i,
+  /performing security verification/i,
+  /security service to protect against malicious bots/i,
+  /verifies you are not a bot/i,
   /attention required/i,
 ];
 
@@ -37,6 +40,9 @@ const STRICT_CHALLENGE_PATTERNS: RegExp[] = [
   /<title>just a moment\.\.\.<\/title>/i,
   /<title>attention required![^<]*<\/title>/i,
   /<title>access denied[^<]*<\/title>/i,
+  /<h[1-6][^>]*>\s*performing security verification\s*<\/h[1-6]>/i,
+  /security service to protect against malicious bots/i,
+  /verifies you are not a bot/i,
 ];
 
 const BLOCK_STATUS = new Set([401, 403, 429, 503, 451]);
