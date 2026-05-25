@@ -13,9 +13,10 @@
   },
   "scripts": {
     "generate": "drizzle-kit generate",
-    "push": "drizzle-kit push --force && tsx src/apply-sql.ts",
-    "migrate": "tsx src/migrate.ts && tsx src/apply-sql.ts",
-    "sql:apply": "tsx src/apply-sql.ts",
+    "push": "tsx src/apply-drizzle-schema.ts && tsx src/apply-raw-sql.ts && tsx src/verify-schema.ts",
+    "migrate": "tsx src/migrate.ts && tsx src/apply-raw-sql.ts && tsx src/verify-schema.ts",
+    "sql:apply": "tsx src/apply-raw-sql.ts",
+    "verify": "tsx src/verify-schema.ts",
     "studio": "drizzle-kit studio",
     "seed": "tsx src/seed.ts",
     "typecheck": "tsc --noEmit",

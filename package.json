@@ -27,6 +27,7 @@
     "db:generate": "pnpm --filter @cr/db generate",
     "db:push": "node scripts/run-with-local-env.mjs pnpm --filter @cr/db push",
     "db:migrate": "node scripts/run-with-local-env.mjs pnpm --filter @cr/db migrate",
+    "db:verify": "node scripts/run-with-local-env.mjs pnpm --filter @cr/db verify",
     "db:seed": "node scripts/run-with-local-env.mjs pnpm --filter @cr/db seed",
     "format": "prettier --write \"**/*.{ts,tsx,md,json,sql}\"",
     "clean": "turbo run clean && node -e \"require('node:fs').rmSync('node_modules',{recursive:true,force:true})\""

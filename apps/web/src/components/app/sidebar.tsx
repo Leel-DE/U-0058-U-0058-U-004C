@@ -11,6 +11,8 @@ import {
   ListTodo,
   BarChart3,
   Download,
+  Activity,
+  Bug,
   Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -22,7 +24,9 @@ const NAV = [
   { href: '/matches', label: 'Matches', icon: GitMerge },
   { href: '/alerts', label: 'Alerts', icon: Bell },
   { href: '/jobs', label: 'Jobs', icon: ListTodo },
+  { href: '/debug/extractions', label: 'Debug', icon: Bug },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/system/health', label: 'System', icon: Activity },
   { href: '/exports', label: 'Exports', icon: Download },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];

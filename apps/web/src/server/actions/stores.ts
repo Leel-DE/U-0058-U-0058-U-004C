@@ -7,6 +7,7 @@ import { schemas } from '@cr/shared';
 import { db, schema } from '@/lib/db';
 import { defineAction } from '@/lib/action';
 import { logAudit } from '@/lib/audit';
+import { recordSelectorVersions } from '@/server/selectors/versioning';
 
 export const createStore = defineAction(
   schemas.createStoreSchema,
@@ -130,6 +131,16 @@ export const createAnalyzedStore = defineAction(
         entityId: result.id,
         after: { name: result.name, domain: result.domain, profile: input.profile },
       });
+      await recordSelectorVersions({
+        storeId: result.id,
+        selectors: {
+          ...input.selectors.productSelectors,
+          ...input.selectors.categorySelectors,
+        },
+        source: input.recommendedSettings.useAi ? 'ai_detected' : 'heuristic',
+        changedBy: ctx.user.id,
+        confidence: input.profile.detectionConfidence,
+      }).catch((err) => console.error('[selector_versions] create_analyzed failed', err));
       revalidatePath('/competitors');
       return { id: result.id };
     } catch (err: unknown) {
@@ -261,6 +272,12 @@ export const updateScrapingRules = defineAction(
       entityId: input.storeId,
       after: input,
     });
+    await recordSelectorVersions({
+      storeId: input.storeId,
+      selectors: input,
+      source: 'manual',
+      changedBy: ctx.user.id,
+    }).catch((err) => console.error('[selector_versions] rules_update failed', err));
     revalidatePath(`/competitors/${input.storeId}`);
     revalidatePath(`/competitors/${input.storeId}/rules`);
     return { ok: true as const };

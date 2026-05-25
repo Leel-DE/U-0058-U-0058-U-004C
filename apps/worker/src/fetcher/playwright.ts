@@ -8,6 +8,29 @@ let openPages = 0;
 
 const MAX_PAGES = Math.max(1, Number(process.env.WORKER_BROWSER_MAX_PAGES ?? 2));
 
+export function browserPoolStats() {
+  return {
+    browserActive: Boolean(browser),
+    contextActive: Boolean(context),
+    openPages,
+    maxPages: MAX_PAGES,
+  };
+}
+
+export async function playwrightHealth() {
+  const startedAt = Date.now();
+  const probe = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  });
+  await probe.close();
+  return {
+    ok: true,
+    durationMs: Date.now() - startedAt,
+    resources: browserPoolStats(),
+  };
+}
+
 async function getContext(userAgent: string): Promise<BrowserContext> {
   if (!browser) {
     browser = await chromium.launch({
@@ -143,9 +166,14 @@ export async function fetchHtmlBrowser(
     }
 
     const html = await page.content();
+    const screenshotBase64 = await page
+      .screenshot({ type: 'jpeg', quality: 60, fullPage: false })
+      .then((buffer) => buffer.toString('base64'))
+      .catch(() => undefined);
     return {
       status,
       html,
+      screenshotBase64,
       finalUrl: page.url(),
       durationMs: Date.now() - t0,
       strategy: 'playwright',

@@ -8,6 +8,8 @@ export const extractedProductSchema = z.object({
   currency: z.enum(SUPPORTED_CURRENCIES).optional(),
   availability: z.enum(AVAILABILITY).optional(),
   image: z.string().url().optional(),
+  sku: z.string().max(500).optional(),
+  category: z.string().max(500).optional(),
   shipping: z.string().max(500).optional(),
   rating: z.number().min(0).max(5).optional(),
 });
@@ -44,8 +46,9 @@ export const scrapeResponseOkSchema = z.object({
     robotsAllowed: z.boolean(),
     sourcePath: z.enum(['json-ld', 'og', 'selector', 'heuristic', 'mixed']),
     confidence: z.number().min(0).max(1),
+    fieldConfidence: z.record(z.number().min(0).max(1)).optional(),
   }),
-  raw: z.object({ htmlSnippet: z.string().optional() }).optional(),
+  raw: z.object({ htmlSnippet: z.string().optional(), screenshotBase64: z.string().optional() }).optional(),
 });
 
 export const scrapeResponseErrSchema = z.object({
@@ -58,6 +61,7 @@ export const scrapeResponseErrSchema = z.object({
     durationMs: z.number(),
     robotsAllowed: z.boolean().optional(),
   }),
+  raw: z.object({ htmlSnippet: z.string().optional(), screenshotBase64: z.string().optional() }).optional(),
 });
 
 export const scrapeResponseSchema = z.discriminatedUnion('ok', [

@@ -2,7 +2,8 @@ import Fastify from 'fastify';
 import pino from 'pino';
 import { z } from 'zod';
 import { fetchHtml } from './fetcher/cheerio.js';
-import { fetchHtmlBrowser, closePlaywright } from './fetcher/playwright.js';
+import { browserPoolStats, fetchHtmlBrowser, closePlaywright, playwrightHealth } from './fetcher/playwright.js';
+import { createRequestId, logStructured } from './observability.js';
 import { extract } from './parser/cascade.js';
 import { classifyResponse } from './detect/block.js';
 import { detectBaseSelectorsFromPages, findFirstProductUrl, type DetectionPage } from './detect/base-selectors.js';
@@ -66,6 +67,8 @@ const scrapeReqSchema = z.object({
     oldPriceSelector: z.string().nullable().optional(),
     availabilitySelector: z.string().nullable().optional(),
     imageSelector: z.string().nullable().optional(),
+    skuSelector: z.string().nullable().optional(),
+    categorySelector: z.string().nullable().optional(),
     shippingSelector: z.string().nullable().optional(),
     ratingSelector: z.string().nullable().optional(),
     priceRegex: z.string().nullable().optional(),
@@ -79,6 +82,11 @@ const scrapeReqSchema = z.object({
 
 const previewReqSchema = scrapeReqSchema.omit({ strategy: true }).extend({
   strategy: z.enum(['cheerio', 'playwright', 'auto']).default('auto'),
+});
+
+const replayReqSchema = z.object({
+  html: z.string().min(1),
+  rules: scrapeReqSchema.shape.rules,
 });
 
 const autoDetectReqSchema = z.object({
@@ -151,9 +159,11 @@ const discoveryControlReqSchema = z.object({
 
 
 const DEFAULT_PER_DOMAIN_DELAY_MS = 1_000;
+const HTML_SNAPSHOT_LIMIT = Math.max(4_000, Number(process.env.WORKER_HTML_SNAPSHOT_CHARS ?? 200_000));
 
 const app = Fastify({ logger: false });
 const fixtureFiller = '<p>Local fixture copy for offline scraping validation, selector testing, alert checks, dashboard refresh checks, and export generation checks.</p>'.repeat(10);
+const requestContext = new WeakMap<object, { requestId: string; startedAt: number }>();
 
 async function fetchDetectionPage({
   url,
@@ -219,6 +229,7 @@ async function fetchDetectionPage({
 }
 
 app.addHook('onRequest', async (req, reply) => {
+  requestContext.set(req, { requestId: createRequestId('worker'), startedAt: Date.now() });
   if (req.url === '/health' || req.url === '/robots.txt' || req.url.startsWith('/fixtures/')) return;
   const auth = req.headers.authorization ?? '';
   if (!SECRET || auth !== `Bearer ${SECRET}`) {
@@ -227,12 +238,49 @@ app.addHook('onRequest', async (req, reply) => {
   }
 });
 
+app.addHook('onResponse', async (req, reply) => {
+  if (req.url.startsWith('/fixtures/')) return;
+  const ctx = requestContext.get(req);
+  logStructured({
+    service: 'worker',
+    level: reply.statusCode >= 500 ? 'error' : reply.statusCode >= 400 ? 'warn' : 'info',
+    requestId: ctx?.requestId,
+    category: 'worker',
+    event: 'http_request',
+    durationMs: ctx ? Date.now() - ctx.startedAt : undefined,
+    metadata: {
+      method: req.method,
+      url: req.url,
+      statusCode: reply.statusCode,
+      memory: process.memoryUsage(),
+    },
+  });
+});
+
 app.get('/health', async () => ({
   ok: true,
   mode: process.env.LOCAL_DEV_MODE === 'true' ? 'local' : 'standard',
   ai: { ...aiStatus(), cache: aiCacheStats() },
+  resources: { memory: process.memoryUsage(), browser: browserPoolStats() },
   ts: new Date().toISOString(),
 }));
+
+app.get('/health/resources', async () => ({
+  ok: true,
+  memory: process.memoryUsage(),
+  browser: browserPoolStats(),
+  uptimeSeconds: process.uptime(),
+  ts: new Date().toISOString(),
+}));
+
+app.get('/health/playwright', async (req, reply) => {
+  try {
+    return await playwrightHealth();
+  } catch (err) {
+    reply.code(503);
+    return { ok: false, error: (err as Error).message, ts: new Date().toISOString() };
+  }
+});
 
 app.get('/ai/status', async () => ({
   ok: true,
@@ -372,6 +420,7 @@ app.post('/scrape', async (req, reply) => {
                 durationMs: Date.now() - startedAt,
                 robotsAllowed: true,
               },
+              raw: { htmlSnippet: pw.html.slice(0, HTML_SNAPSHOT_LIMIT), screenshotBase64: pw.screenshotBase64 },
             };
           }
         } catch (err) {
@@ -393,6 +442,7 @@ app.post('/scrape', async (req, reply) => {
             durationMs: Date.now() - startedAt,
             robotsAllowed: true,
           },
+          raw: { htmlSnippet: fetched.html.slice(0, HTML_SNAPSHOT_LIMIT), screenshotBase64: fetched.screenshotBase64 },
         };
       }
     }
@@ -409,6 +459,7 @@ app.post('/scrape', async (req, reply) => {
           durationMs: Date.now() - startedAt,
           robotsAllowed: true,
         },
+        raw: { htmlSnippet: fetched.html.slice(0, HTML_SNAPSHOT_LIMIT), screenshotBase64: fetched.screenshotBase64 },
       };
     }
 
@@ -421,6 +472,8 @@ app.post('/scrape', async (req, reply) => {
         currency: data.currency,
         availability: data.availability,
         image: data.image,
+        sku: data.sku,
+        category: data.category,
         shipping: data.shipping,
         rating: data.rating,
       },
@@ -431,8 +484,9 @@ app.post('/scrape', async (req, reply) => {
         robotsAllowed: true,
         sourcePath: data.sourcePath,
         confidence: data.confidence,
+        fieldConfidence: data.fieldConfidence,
       },
-      raw: { htmlSnippet: fetched.html.slice(0, 4_000) },
+      raw: { htmlSnippet: fetched.html.slice(0, HTML_SNAPSHOT_LIMIT), screenshotBase64: fetched.screenshotBase64 },
     };
   } catch (err) {
     logger.error({ err }, 'scrape failed');
@@ -443,6 +497,55 @@ app.post('/scrape', async (req, reply) => {
       meta: { strategy: 'cheerio', durationMs: Date.now() - startedAt },
     };
   }
+});
+
+app.post('/scrape/replay', async (req, reply) => {
+  const parse = replayReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return {
+      ok: false,
+      errorCode: 'http_error' as ErrorCode,
+      message: 'invalid_payload: ' + JSON.stringify(parse.error.flatten().fieldErrors),
+      meta: { strategy: 'cheerio', durationMs: 0 },
+    };
+  }
+  const startedAt = Date.now();
+  const data = extract(parse.data.html, parse.data.rules as ScrapingRules);
+  if (!data) {
+    return {
+      ok: false,
+      errorCode: 'parse_failed' as ErrorCode,
+      message: 'replay extraction returned no price',
+      meta: { strategy: 'cheerio', durationMs: Date.now() - startedAt },
+      raw: { htmlSnippet: parse.data.html.slice(0, HTML_SNAPSHOT_LIMIT) },
+    };
+  }
+  return {
+    ok: true,
+    data: {
+      title: data.title,
+      price: data.price,
+      oldPrice: data.oldPrice,
+      currency: data.currency,
+      availability: data.availability,
+      image: data.image,
+      sku: data.sku,
+      category: data.category,
+      shipping: data.shipping,
+      rating: data.rating,
+    },
+    meta: {
+      strategy: 'cheerio',
+      httpStatus: 200,
+      durationMs: Date.now() - startedAt,
+      robotsAllowed: true,
+      sourcePath: data.sourcePath,
+      confidence: data.confidence,
+      fieldConfidence: data.fieldConfidence,
+    },
+    raw: { htmlSnippet: parse.data.html.slice(0, HTML_SNAPSHOT_LIMIT) },
+  };
 });
 
 app.post('/scrape/preview', async (req, reply) => {

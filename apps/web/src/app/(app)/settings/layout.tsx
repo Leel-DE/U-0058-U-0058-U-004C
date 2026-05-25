@@ -3,6 +3,7 @@ import { ReactNode } from 'react';
 
 const TABS = [
   { href: '/settings/general', label: 'General' },
+  { href: '/settings/project', label: 'Project status' },
   { href: '/settings/members', label: 'Members' },
   { href: '/settings/notifications', label: 'Notifications' },
   { href: '/settings/api-keys', label: 'API keys' },

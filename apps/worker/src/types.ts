@@ -4,6 +4,8 @@ export interface ScrapingRules {
   oldPriceSelector?: string | null;
   availabilitySelector?: string | null;
   imageSelector?: string | null;
+  skuSelector?: string | null;
+  categorySelector?: string | null;
   shippingSelector?: string | null;
   ratingSelector?: string | null;
   priceRegex?: string | null;
@@ -22,6 +24,8 @@ export interface Extracted {
   currency?: string;
   availability?: Availability;
   image?: string;
+  sku?: string;
+  category?: string;
   shipping?: string;
   rating?: number;
 }
@@ -29,6 +33,7 @@ export interface Extracted {
 export interface ExtractedWithSource extends Extracted {
   sourcePath: SourcePath;
   confidence: number;
+  fieldConfidence?: Partial<Record<keyof Extracted, number>>;
 }
 
 export type ErrorCode =
@@ -42,6 +47,7 @@ export type ErrorCode =
 export interface FetchResult {
   status: number;
   html: string;
+  screenshotBase64?: string;
   finalUrl: string;
   durationMs: number;
   strategy: 'cheerio' | 'playwright';

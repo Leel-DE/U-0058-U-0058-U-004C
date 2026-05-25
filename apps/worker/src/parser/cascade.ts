@@ -5,6 +5,7 @@ import { parseOpenGraph } from './open-graph.js';
 import { parseSelectors } from './selector.js';
 import { parseHeuristics } from './heuristic.js';
 import { parseVisibleText } from './visible-text.js';
+import { aggregateFieldConfidence, scoreFieldConfidence } from '../confidence/field-confidence.js';
 
 function merge(base: Extracted, other: Extracted): Extracted {
   return {
@@ -14,6 +15,8 @@ function merge(base: Extracted, other: Extracted): Extracted {
     currency: base.currency ?? other.currency,
     availability: base.availability ?? other.availability,
     image: base.image ?? other.image,
+    sku: base.sku ?? other.sku,
+    category: base.category ?? other.category,
     shipping: base.shipping ?? other.shipping,
     rating: base.rating ?? other.rating,
   };
@@ -75,9 +78,11 @@ export function extract(html: string, rules: ScrapingRules): ExtractedWithSource
   if (!primary || combined.price == null) return null;
 
   const sourcePath: SourcePath = tried.length > 1 ? 'mixed' : primary;
+  const fieldConfidence = scoreFieldConfidence({ extracted: combined, sourcePath, rules });
   return {
     ...combined,
     sourcePath,
-    confidence: scoreConfidence(combined, primary),
+    confidence: Math.max(scoreConfidence(combined, primary), aggregateFieldConfidence(fieldConfidence)),
+    fieldConfidence,
   };
 }

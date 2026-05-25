@@ -34,6 +34,8 @@ export interface ExtractedProduct {
   currency?: Currency;
   availability?: Availability;
   image?: string;
+  sku?: string;
+  category?: string;
   shipping?: string;
   rating?: number;
 }
@@ -190,8 +192,9 @@ export type ScrapeResponse =
         robotsAllowed: boolean;
         sourcePath: ScrapeSourcePath;
         confidence: number;
+        fieldConfidence?: Partial<Record<keyof ExtractedProduct, number>>;
       };
-      raw?: { htmlSnippet?: string };
+      raw?: { htmlSnippet?: string; screenshotBase64?: string };
     }
   | {
       ok: false;
@@ -203,6 +206,7 @@ export type ScrapeResponse =
         durationMs: number;
         robotsAllowed?: boolean;
       };
+      raw?: { htmlSnippet?: string; screenshotBase64?: string };
     };
 
 export interface AlertParams {

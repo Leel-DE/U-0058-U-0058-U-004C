@@ -12,4 +12,5 @@ export * from './exports-audit';
 export * from './ai';
 export * from './discovery';
 export * from './analytics';
+export * from './operations';
 export * from './relations';
