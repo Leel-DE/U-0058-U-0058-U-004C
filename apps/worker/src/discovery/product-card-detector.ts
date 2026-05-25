@@ -134,7 +134,11 @@ function stripNoise($: CheerioAPI): void {
   // Also remove obvious structural noise (header/footer/nav).
   $(STRUCTURAL_NOISE).remove();
   // Common cookie banners / modals / newsletter overlays.
-  $('[class*="cookie" i], [class*="modal" i], [class*="popup" i], [class*="newsletter" i], [class*="overlay" i]').remove();
+  $('[class*="cookie" i], [class*="modal" i], [class*="popup" i], [class*="newsletter" i], [class*="overlay" i]').each((_, el) => {
+    const node = $(el);
+    if (node.is('.js-product, .js-store-product') || node.find('.js-product, .js-store-product').length > 0) return;
+    node.remove();
+  });
 }
 
 interface ScoredCandidate {
@@ -189,7 +193,15 @@ function hasFullCardSignals(s: ScoredCandidate): boolean {
     hasSignal(s, 'itemprop_price_or_offers') ||
     hasSignal(s, 'price_class_hint');
 
-  return hasSchema || (hasProductLink && hasImage && (hasPrice || hasTitle)) || (hasDataAttr && hasImage && (hasPrice || hasTitle));
+  const className = s.el.attr('class') ?? '';
+  const isTildaPopupProduct = /\b(?:js-product|js-store-product|js-store-product_single)\b/.test(className);
+
+  return (
+    hasSchema ||
+    (hasProductLink && hasImage && (hasPrice || hasTitle)) ||
+    (hasDataAttr && hasImage && (hasPrice || hasTitle)) ||
+    (isTildaPopupProduct && hasDataAttr && hasPrice && hasTitle)
+  );
 }
 
 /** If parent and child both scored, keep the smaller one (more specific) but

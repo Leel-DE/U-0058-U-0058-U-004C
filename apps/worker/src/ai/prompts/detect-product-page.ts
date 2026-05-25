@@ -1,7 +1,7 @@
 export function productSelectorPrompt(dom: string): string {
   return `You are detecting stable CSS selectors for one ecommerce product page.
 Return ONLY valid JSON with this exact shape:
-{"titleSelector":"","priceSelector":"","oldPriceSelector":"","availabilitySelector":"","imageSelector":"","shippingSelector":"","ratingSelector":"","currency":"EUR","confidence":0.0,"notes":[]}
+{"titleSelector":"","priceSelector":"","oldPriceSelector":"","availabilitySelector":"","imageSelector":"","brandSelector":"","skuSelector":"","breadcrumbsSelector":"","shippingSelector":"","ratingSelector":"","currency":"EUR","confidence":0.0,"notes":[]}
 
 Rules:
 - Prefer stable semantic selectors: itemprop, data-testid, data-test, aria-label, schema.org attributes, meaningful ids/classes.
@@ -12,4 +12,3 @@ Rules:
 Cleaned DOM:
 ${dom}`;
 }
-

@@ -34,14 +34,14 @@ export async function getPriceMovements(orgId: string, filters: DashboardFilters
       join competitor_products cp on cp.id = ps.competitor_product_id
       join stores st on st.id = cp.store_id
       where ps.org_id = ${orgId}
-        and ps.scraped_at >= ${filters.previousDateFrom}
+        and ps.scraped_at >= ${filters.previousDateFrom}::timestamptz
         ${productFilter(filters)}
     )
     select ${bucket}::text as bucket,
            count(*) filter (where price < previous_price)::int as drops,
            count(*) filter (where price > previous_price)::int as increases
     from priced ps
-    where ps.scraped_at >= ${filters.dateFrom}
+    where ps.scraped_at >= ${filters.dateFrom}::timestamptz
       and ps.price is not null
       and ps.previous_price is not null
       and ps.price <> ps.previous_price
@@ -60,7 +60,7 @@ export async function getPriceMovements(orgId: string, filters: DashboardFilters
       join competitor_products cp on cp.id = ps.competitor_product_id
       join stores st on st.id = cp.store_id
       where ps.org_id = ${orgId}
-        and ps.scraped_at >= ${filters.previousDateFrom}
+        and ps.scraped_at >= ${filters.previousDateFrom}::timestamptz
         ${productFilter(filters)}
     )
     select competitor_product_id as product_id,
@@ -74,7 +74,7 @@ export async function getPriceMovements(orgId: string, filters: DashboardFilters
            (((price - previous_price) / nullif(previous_price, 0)) * 100)::numeric(12,2)::text as delta_pct,
            scraped_at::text as captured_at
     from priced
-    where scraped_at >= ${filters.dateFrom}
+    where scraped_at >= ${filters.dateFrom}::timestamptz
       and price is not null
       and previous_price is not null
       and price <> previous_price

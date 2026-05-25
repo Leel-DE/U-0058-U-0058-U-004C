@@ -1,4 +1,4 @@
-export const SUPPORTED_CURRENCIES = ['EUR', 'USD', 'GBP'] as const;
+export const SUPPORTED_CURRENCIES = ['EUR', 'USD', 'GBP', 'UAH'] as const;
 export type Currency = (typeof SUPPORTED_CURRENCIES)[number];
 
 export const ORG_ROLES = ['owner', 'manager', 'viewer'] as const;
@@ -20,6 +20,9 @@ export type SnapshotStatus = (typeof SNAPSHOT_STATUS)[number];
 
 export const SCRAPE_STRATEGY = ['cheerio', 'playwright', 'manual', 'csv_import'] as const;
 export type ScrapeStrategy = (typeof SCRAPE_STRATEGY)[number];
+
+export const CRAWL_PRESETS = ['safe', 'balanced', 'fast', 'heavy_discovery'] as const;
+export type CrawlPreset = (typeof CRAWL_PRESETS)[number];
 
 export const RUN_STATUS = ['queued', 'running', 'success', 'partial', 'failed'] as const;
 export type RunStatus = (typeof RUN_STATUS)[number];

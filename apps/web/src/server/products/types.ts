@@ -26,6 +26,20 @@ export interface ProductSparkPoint {
   price: number | null;
 }
 
+export interface ProductStoreMember {
+  competitorProductId: string;
+  storeId: string;
+  storeName: string;
+  title: string;
+  url: string;
+  imageUrl: string | null;
+  price: number | null;
+  oldPrice: number | null;
+  currency: string;
+  availability: string | null;
+  lastScrapedAt: string | null;
+}
+
 export interface ProductIntelligenceRow {
   id: string;
   entityType: ProductEntityType;
@@ -51,6 +65,26 @@ export interface ProductIntelligenceRow {
   stale: boolean;
   missingPrice: boolean;
   sparkline: ProductSparkPoint[];
+  members: ProductStoreMember[];
+  clusterKey: string;
+}
+
+export interface ProductCluster {
+  key: string;
+  representative: ProductIntelligenceRow;
+  rows: ProductIntelligenceRow[];
+  members: ProductStoreMember[];
+  storeCount: number;
+  minPrice: number | null;
+  avgPrice: number | null;
+  maxPrice: number | null;
+  cheapestStoreName: string | null;
+  highestStoreName: string | null;
+  savingsPct: number | null;
+  currency: string;
+  inStockStores: number;
+  outOfStockStores: number;
+  lastChange: string | null;
 }
 
 export interface ProductGroupSummary {
@@ -63,6 +97,7 @@ export interface ProductGroupSummary {
 
 export interface ProductIntelligenceList {
   rows: ProductIntelligenceRow[];
+  clusters: ProductCluster[];
   groups: ProductGroupSummary[];
   total: number;
   page: number;
@@ -85,6 +120,7 @@ export interface ProductCompetitorComparison {
   competitorProductId: string;
   competitorId: string;
   competitorName: string;
+  competitorDomain: string | null;
   title: string;
   url: string;
   currentPrice: number | null;
@@ -97,6 +133,59 @@ export interface ProductCompetitorComparison {
   lastUpdate: string | null;
   confidence: number | null;
   source: string | null;
+  sku: string | null;
+  gtin: string | null;
+  imageUrl: string | null;
+  pricePositionPct: number | null;
+}
+
+export interface ProductMissingStore {
+  storeId: string;
+  storeName: string;
+  storeDomain: string | null;
+  currency: string | null;
+  status: string | null;
+  searchUrl: string;
+  scrapedCount: number;
+}
+
+export interface CrossStoreCandidate {
+  competitorProductId: string;
+  storeId: string;
+  storeName: string;
+  storeDomain: string | null;
+  title: string;
+  url: string;
+  imageUrl: string | null;
+  brand: string | null;
+  sku: string | null;
+  gtin: string | null;
+  price: number | null;
+  oldPrice: number | null;
+  currency: string | null;
+  availability: string | null;
+  lastScrapedAt: string | null;
+  similarity: number;
+  matchMethod: 'gtin' | 'sku' | 'brand_model' | 'title_similarity';
+  reasons: string[];
+}
+
+export interface ProductIdentifiers {
+  sku: string | null;
+  gtin: string | null;
+  brand: string | null;
+  competitorSkus: string[];
+  competitorGtins: string[];
+  competitorTitles: string[];
+}
+
+export interface ProductPriceStats {
+  median: number | null;
+  best30d: number | null;
+  worst30d: number | null;
+  best90d: number | null;
+  worst90d: number | null;
+  cheapestStreakDays: number | null;
 }
 
 export interface ProductDetailPoint {
@@ -154,18 +243,27 @@ export interface ProductDetail {
   confidence: number;
   competitorsCount: number;
   lastUpdated: string | null;
+  url: string | null;
+  myPrice: number | null;
+  identifiers: ProductIdentifiers;
   overview: {
     cheapestCompetitor: string | null;
     highestPrice: number | null;
+    minPrice: number | null;
     averagePrice: number | null;
     currentDiscountPct: number | null;
     stockRatio: number;
     volatilityScore: number;
     marketTrend: ProductTrend;
     competitorSpread: number | null;
+    spreadPct: number | null;
+    inStockCount: number;
+    outOfStockCount: number;
     currency: string;
   };
+  priceStats: ProductPriceStats;
   competitors: ProductCompetitorComparison[];
+  missingFromStores: ProductMissingStore[];
   priceTimeline: ProductDetailPoint[];
   spreadTimeline: ProductSpreadPoint[];
   events: ProductEvent[];

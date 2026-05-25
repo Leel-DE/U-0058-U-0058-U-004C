@@ -1,11 +1,13 @@
 export function categorySelectorPrompt(dom: string): string {
   return `You are detecting stable CSS selectors for an ecommerce category/listing page.
 Return ONLY valid JSON with this exact shape:
-{"productCardSelector":"","cardTitleSelector":"","cardPriceSelector":"","cardLinkSelector":"","cardImageSelector":"","confidence":0.0,"notes":[]}
+{"productCardSelector":"","cardTitleSelector":"","cardPriceSelector":"","cardOldPriceSelector":"","cardImageSelector":"","cardLinkSelector":"","cardAvailabilitySelector":"","paginationNextSelector":"","loadMoreSelector":"","confidence":0.0,"notes":[]}
 
 Rules:
 - productCardSelector must match repeated product cards.
 - Card child selectors should work inside or across those cards.
+- paginationNextSelector should match the next page link when present.
+- loadMoreSelector should match a load-more button/link when present.
 - Prefer itemprop, data-testid, data-test, aria-label, semantic ids/classes.
 - Avoid nth-child, generated hashes, and giant descendant chains.
 - Prefer stable repeated product-card containers, not inner price/title nodes.

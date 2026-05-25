@@ -10,6 +10,10 @@ describe('parsePrice', () => {
     expect(parsePrice('$1,299.99')).toBe(1299.99);
     expect(parsePrice('19.99')).toBe(19.99);
   });
+  it('parses plain integer prices and ranges', () => {
+    expect(parsePrice('1699 - 1991 грн.')).toBe(1699);
+    expect(parsePrice('2499 грн.')).toBe(2499);
+  });
   it('returns undefined for non-numeric', () => {
     expect(parsePrice('out of stock')).toBeUndefined();
     expect(parsePrice('')).toBeUndefined();
@@ -29,6 +33,7 @@ describe('detectCurrency', () => {
   it('detects from ISO code', () => {
     expect(detectCurrency('19.99 EUR')).toBe('EUR');
     expect(detectCurrency('USD 19.99')).toBe('USD');
+    expect(detectCurrency('1699 грн.')).toBe('UAH');
   });
 });
 

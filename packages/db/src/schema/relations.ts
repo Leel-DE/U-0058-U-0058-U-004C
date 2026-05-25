@@ -1,7 +1,7 @@
 import { relations } from 'drizzle-orm';
 import { profiles } from './profiles';
 import { organizations, memberships, invitations } from './organizations';
-import { stores, scrapingRules } from './stores';
+import { competitorProfiles, stores, scrapingRules } from './stores';
 import { myProducts, competitorProducts } from './products';
 import {
   normalizedProductAliases,
@@ -48,6 +48,7 @@ export const membershipsRelations = relations(memberships, ({ one }) => ({
 export const storesRelations = relations(stores, ({ one, many }) => ({
   organization: one(organizations, { fields: [stores.orgId], references: [organizations.id] }),
   rules: one(scrapingRules, { fields: [stores.id], references: [scrapingRules.storeId] }),
+  profile: one(competitorProfiles, { fields: [stores.id], references: [competitorProfiles.storeId] }),
   products: many(competitorProducts),
   runs: many(scrapeRuns),
   aiExtractionSuggestions: many(aiExtractionSuggestions),
@@ -57,6 +58,10 @@ export const storesRelations = relations(stores, ({ one, many }) => ({
 
 export const scrapingRulesRelations = relations(scrapingRules, ({ one }) => ({
   store: one(stores, { fields: [scrapingRules.storeId], references: [stores.id] }),
+}));
+
+export const competitorProfilesRelations = relations(competitorProfiles, ({ one }) => ({
+  store: one(stores, { fields: [competitorProfiles.storeId], references: [stores.id] }),
 }));
 
 export const aiExtractionSuggestionsRelations = relations(aiExtractionSuggestions, ({ one }) => ({

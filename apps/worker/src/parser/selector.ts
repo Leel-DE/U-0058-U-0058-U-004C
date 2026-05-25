@@ -7,7 +7,7 @@ export function parseSelectors($: CheerioAPI, rules: ScrapingRules): Extracted |
     if (!sel) return undefined;
     const el = $(sel).first();
     if (!el.length) return undefined;
-    const txt = el.text().trim();
+    const txt = (el.attr('content') ?? el.attr('value') ?? el.attr('aria-label') ?? el.attr('title') ?? el.text()).trim();
     return txt || undefined;
   };
   const getAttr = (sel: string | null | undefined, attr: string) => {
@@ -21,7 +21,7 @@ export function parseSelectors($: CheerioAPI, rules: ScrapingRules): Extracted |
   const priceText = get(rules.priceSelector);
   const oldPriceText = get(rules.oldPriceSelector);
   const availabilityText = get(rules.availabilitySelector);
-  const image = getAttr(rules.imageSelector, 'src') ?? getAttr(rules.imageSelector, 'data-src');
+  const image = getAttr(rules.imageSelector, 'src') ?? getAttr(rules.imageSelector, 'data-src') ?? getAttr(rules.imageSelector, 'content');
   const shipping = get(rules.shippingSelector);
   const ratingText = get(rules.ratingSelector);
 

@@ -24,10 +24,10 @@ export async function getMonitoringHealth(orgId: string, filters: DashboardFilte
       ${storeFilter(filters)}
     )
     select
-      (select count(*)::int from scrape_runs sr join scoped_stores st on st.id = sr.store_id where sr.org_id = ${orgId} and sr.created_at >= ${filters.dateFrom}) as total_runs,
-      (select count(*)::int from scrape_runs sr join scoped_stores st on st.id = sr.store_id where sr.org_id = ${orgId} and sr.created_at >= ${filters.dateFrom} and sr.status in ('success','partial')) as successful_runs,
+      (select count(*)::int from scrape_runs sr join scoped_stores st on st.id = sr.store_id where sr.org_id = ${orgId} and sr.created_at >= ${filters.dateFrom}::timestamptz) as total_runs,
+      (select count(*)::int from scrape_runs sr join scoped_stores st on st.id = sr.store_id where sr.org_id = ${orgId} and sr.created_at >= ${filters.dateFrom}::timestamptz and sr.status in ('success','partial')) as successful_runs,
       (select count(*)::int from scrape_runs sr join scoped_stores st on st.id = sr.store_id where sr.org_id = ${orgId} and sr.created_at >= now() - interval '24 hours' and sr.status = 'failed') as failed_runs_24h,
-      (select avg(extract(epoch from (sr.finished_at - sr.started_at)) * 1000)::int from scrape_runs sr join scoped_stores st on st.id = sr.store_id where sr.org_id = ${orgId} and sr.started_at is not null and sr.finished_at is not null and sr.created_at >= ${filters.dateFrom}) as avg_duration_ms,
+      (select avg(extract(epoch from (sr.finished_at - sr.started_at)) * 1000)::int from scrape_runs sr join scoped_stores st on st.id = sr.store_id where sr.org_id = ${orgId} and sr.started_at is not null and sr.finished_at is not null and sr.created_at >= ${filters.dateFrom}::timestamptz) as avg_duration_ms,
       (select count(*)::int from competitor_products cp join scoped_stores st on st.id = cp.store_id where cp.org_id = ${orgId} and cp.selector_failure_count > 0) as broken_selectors,
       (select count(*)::int from manual_scraping_sessions ms left join scoped_stores st on st.id = ms.competitor_id where ms.organization_id = ${orgId} and ms.status not in ('completed','cancelled','expired')) as manual_sessions,
       (select count(*)::int from competitor_products cp join scoped_stores st on st.id = cp.store_id where cp.org_id = ${orgId} and cp.active = true and (cp.last_scraped_at is null or cp.last_scraped_at < now() - interval '24 hours')) as stale_products,

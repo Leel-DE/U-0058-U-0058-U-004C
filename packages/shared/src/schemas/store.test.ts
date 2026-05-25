@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createStoreSchema, scrapingRulesSchema, testScrapeSchema } from './store';
+import { analyzeStoreSchema, createAnalyzedStoreSchema, createStoreSchema, scrapingRulesSchema, testScrapeSchema } from './store';
 
 describe('createStoreSchema', () => {
   it('strips protocol and path from domain', () => {
@@ -68,6 +68,51 @@ describe('scrapingRulesSchema', () => {
       useOpenGraph: true,
     });
     expect(r.useJsonLd).toBe(true);
+  });
+});
+
+describe('store analysis schemas', () => {
+  it('accepts homepage-only analysis input', () => {
+    const r = analyzeStoreSchema.parse({ homepageUrl: 'https://www.obi.de/' });
+    expect(r.useAi).toBe(false);
+  });
+
+  it('accepts analyzed store confirmation payload', () => {
+    const r = createAnalyzedStoreSchema.parse({
+      store: {
+        name: 'OBI',
+        domain: 'https://www.obi.de/',
+        countryCode: 'de',
+        currency: 'EUR',
+        homepageUrl: 'https://www.obi.de/',
+      },
+      selectors: {
+        productSelectors: { titleSelector: 'h1', priceSelector: '.price' },
+        categorySelectors: { productCardSelector: '.product-card', cardPriceSelector: '.price' },
+      },
+      recommendedSettings: {
+        crawlPreset: 'balanced',
+        crawlFrequencyMinutes: 1440,
+        crawlDelaySeconds: 5,
+        respectRobots: true,
+        jsRequired: false,
+        useManualCaptcha: true,
+        useAi: false,
+        discoveryPreset: 'normal',
+        discoveryDefaultsJson: { maxPages: 250 },
+      },
+      profile: {
+        framework: 'shopware',
+        renderingStrategy: 'hybrid',
+        scrapeDifficulty: 'medium',
+        antiBotRisk: 'low',
+        recommendedMode: 'hybrid',
+        detectionConfidence: 0.92,
+        autoDetectedSettingsJson: {},
+      },
+    });
+    expect(r.store.domain).toBe('www.obi.de');
+    expect(r.store.countryCode).toBe('DE');
   });
 });
 

@@ -38,14 +38,14 @@ const CURRENCY_TOKEN =
   '€|EUR|\\$|USD|£|GBP|₽|RUB|руб\\.?|р\\.|₴|UAH|грн\\.?|₸|тг|KZT|zł|PLN|Kč|CZK|CHF|Fr\\.';
 
 const SINGLE_PRICE_SHAPE = new RegExp(
-  `^\\s*(?:${CURRENCY_TOKEN})?\\s*(?:\\d{1,3}(?:[.,\\s]\\d{3})*(?:[,.]\\d{1,2}|,-)?|\\d{1,6}[,.]\\d{1,2}|\\d{1,6})\\s*(?:${CURRENCY_TOKEN})?\\s*$`,
+  `^\\s*(?:${CURRENCY_TOKEN})?\\s*(?:\\d{1,3}(?:[.,\\s]\\d{3})*(?:\\s*[-–]\\s*\\d{1,6})?(?:[,.]\\d{1,2}|,-)?|\\d{1,6}(?:\\s*[-–]\\s*\\d{1,6})?[,.]\\d{1,2}|\\d{1,6}(?:\\s*[-–]\\s*\\d{1,6})?)\\s*(?:${CURRENCY_TOKEN})?\\s*$`,
   'i',
 );
 
 // Anchored price regex: one currency-flanked numeric token. Currency set must
 // stay in sync with CURRENCY_TOKEN above (RUB, UAH, KZT, PLN, CZK, CHF…).
 const PRICE_ANCHORED_RE =
-  /(?:€|EUR|\$|USD|£|GBP|₽|RUB|руб\.?|р\.|₴|UAH|грн\.?|₸|тг|KZT|zł|PLN|Kč|CZK|CHF|Fr\.)\s*([0-9]{1,5}(?:[.  ]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)|([0-9]{1,5}(?:[.  ]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)\s*(?:€|EUR|\$|USD|£|GBP|₽|RUB|руб\.?|р\.|₴|UAH|грн\.?|₸|тг|KZT|zł|PLN|Kč|CZK|CHF|Fr\.)/i;
+  /(?:€|EUR|\$|USD|£|GBP|₽|RUB|руб\.?|р\.|₴|UAH|грн\.?|₸|тг|KZT|zł|PLN|Kč|CZK|CHF|Fr\.)\s*([0-9]{1,6}(?:\s*[-–]\s*[0-9]{1,6})?(?:[.  ]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)|([0-9]{1,6}(?:\s*[-–]\s*[0-9]{1,6})?(?:[.  ]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)\s*(?:€|EUR|\$|USD|£|GBP|₽|RUB|руб\.?|р\.|₴|UAH|грн\.?|₸|тг|KZT|zł|PLN|Kč|CZK|CHF|Fr\.)/i;
 
 const PRICE_ANCHORED_RE_GLOBAL = new RegExp(PRICE_ANCHORED_RE.source, 'gi');
 
@@ -92,6 +92,8 @@ function pickImageAttr(img: Cheerio<DomNode>): string | undefined {
     'data-image',
     'data-cy-img-src',
     'data-bg',
+    'data-original',
+    'content',
     'srcset',
     'src',
   ];
@@ -127,7 +129,8 @@ function pickProductLink($: CheerioAPI, card: Cheerio<DomNode>): string | undefi
     card.attr('data-product-url') ??
     card.attr('data-product-link') ??
     card.attr('data-product-href') ??
-    card.attr('data-href');
+    card.attr('data-href') ??
+    card.parents('[data-tooltip-hook]').first().attr('data-tooltip-hook');
   if (attrUrl) candidates.push(attrUrl);
   const selfHref = card.attr('href');
   if (selfHref) candidates.push(selfHref);
@@ -137,7 +140,8 @@ function pickProductLink($: CheerioAPI, card: Cheerio<DomNode>): string | undefi
   }
   for (const href of candidates) {
     if (!href) continue;
-    if (/^(?:#|javascript:|mailto:|tel:|data:)/i.test(href)) continue;
+    if (/^(?:javascript:|mailto:|tel:|data:)/i.test(href)) continue;
+    if (href.startsWith('#') && !href.startsWith('#popup:')) continue;
     if (/\/(?:cart|checkout|login|signin|account|wishlist|compare|search|filter)(?:\/|$|\?)/i.test(href)) {
       continue;
     }
@@ -202,6 +206,9 @@ export function extractFields(
     '[itemprop="name"]',
     '[data-testid*="title" i]',
     '[data-testid*="name" i]',
+    '.js-product-name',
+    '.t750__title',
+    '.t-store__prod-popup__name',
     'h2',
     'h3',
     '[class*="title" i]',
@@ -213,7 +220,7 @@ export function extractFields(
     const el = card.find(sel).first();
     if (!el.length) continue;
     const candidate = txt(el) || (el.attr('title') ?? '').trim();
-    if (candidate.length >= 3 && candidate.length <= 250 && /[a-zäöüß]/i.test(candidate)) {
+    if (candidate.length >= 3 && candidate.length <= 250 && /\p{L}/u.test(candidate)) {
       title = candidate;
       sources.push(`title:${sel}`);
       break;
@@ -239,6 +246,11 @@ export function extractFields(
     '[itemprop="price"]',
     '[data-testid*="price-current" i]',
     '[data-testid*="current-price" i]',
+    '.js-store-prod-price',
+    '.js-store-prod-price-val',
+    '.js-product-price',
+    '.t750__price',
+    '.t750__price-value',
     '[class*="price--special" i]',
     '[class*="price--sale" i]',
     '[class*="price--current" i]',
@@ -292,6 +304,9 @@ export function extractFields(
   // `old-price` (Magento), `was-price`, `price_list`, RRP / UVP markers.
   const oldSelectors = [
     '[class*="price--old" i]',
+    '.js-store-prod-price-old',
+    '.js-store-prod-price-old-val',
+    '.t750__price_old',
     '[class*="price_old" i]',
     '[class*="old-price" i]',
     '[class*="price--was" i]',
@@ -343,7 +358,14 @@ export function extractFields(
     card.attr('data-img');
   const imageUrl =
     resolveAbsolute(cardImgAttr, opts.baseUrl) ??
-    resolveAbsolute(pickImageAttr(card.find('img').first()), opts.baseUrl);
+    resolveAbsolute(
+      pickImageAttr(
+        card
+          .find('img, .js-product-img, [data-original], meta[content*=".jpg"], meta[content*=".png"], meta[content*=".webp"]')
+          .first(),
+      ),
+      opts.baseUrl,
+    );
   if (imageUrl) sources.push(cardImgAttr ? 'image:card_data_attr' : 'image:img_tag');
 
   // --- availability / brand / rating / discount -----------------------------
@@ -353,6 +375,8 @@ export function extractFields(
     undefined;
   if (brand) sources.push('brand:tag');
   const sku = pickAttrOrText(card, ['data-sku', 'data-product-sku', 'data-article-id'], [
+    '.js-product-sku',
+    '.js-store-prod-sku',
     '[itemprop="sku"]',
     '[class*="sku" i]',
     '[class*="artikelnummer" i]',

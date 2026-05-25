@@ -17,6 +17,7 @@ type DomNode = AnyNode;
 const CARD_SELECTORS = [
   // Generic explicit product-identifier attributes — extremely reliable.
   '[data-product-id]',
+  '[data-product-gen-uid]',
   '[data-variant-id]',
   '[data-sku]',
   '[data-article-id]',
@@ -26,6 +27,8 @@ const CARD_SELECTORS = [
   '[data-testid*="product" i]',
   '[data-test*="product" i]',
   '[class*="product-card" i]',
+  '.js-store-product',
+  '.js-product[data-product-gen-uid]',
   '[class*="product-tile" i]',
   '[class*="product-item" i]',
   '[class*="product" i][class*="item" i]',
@@ -50,7 +53,7 @@ const CARD_SELECTORS = [
  *   "20261399.00"    \u2014 model year glued to price by the site's HTML.
  */
 const PRICE_RE =
-  /(?:\u20ac|EUR|\$|USD|\u00a3|GBP)\s*([0-9]{1,5}(?:[.\u00a0\u202f]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)|([0-9]{1,5}(?:[.\u00a0\u202f]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)\s*(?:\u20ac|EUR|\$|USD|\u00a3|GBP)/i;
+  /(?:\u20ac|EUR|\$|USD|\u00a3|GBP|\u20b4|UAH|грн\.?)\s*([0-9]{1,6}(?:\s*[-–]\s*[0-9]{1,6})?(?:[.\u00a0\u202f]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)|([0-9]{1,6}(?:\s*[-–]\s*[0-9]{1,6})?(?:[.\u00a0\u202f]?[0-9]{3})*(?:[,.](?:[0-9]{1,2}|-))?)\s*(?:\u20ac|EUR|\$|USD|\u00a3|GBP|\u20b4|UAH|грн\.?)/i;
 const PRICE_RE_GLOBAL = new RegExp(PRICE_RE.source, 'gi');
 
 /** Highest plausible price for any single retail product (in major units).
@@ -73,14 +76,14 @@ function attr(el: cheerio.Cheerio<DomNode>, name: string) {
  *  the MAX_PLAUSIBLE_PRICE cap then misses it. This regex anchors the
  *  whole string so any extra garbage causes a clean rejection. */
 const SINGLE_PRICE_SHAPE =
-  /^\s*(?:\u20ac|EUR|\$|USD|\u00a3|GBP)?\s*(?:\d{1,3}(?:[.,\s]\d{3})*(?:[,.]\d{1,2}|,-)?|\d{1,6}[,.]\d{1,2}|\d{1,6})\s*(?:\u20ac|EUR|\$|USD|\u00a3|GBP)?\s*$/i;
+  /^\s*(?:\u20ac|EUR|\$|USD|\u00a3|GBP|\u20b4|UAH|грн\.?)?\s*(?:\d{1,3}(?:[.,\s]\d{3})*(?:\s*[-–]\s*\d{1,6})?(?:[,.]\d{1,2}|,-)?|\d{1,6}(?:\s*[-–]\s*\d{1,6})?[,.]\d{1,2}|\d{1,6}(?:\s*[-–]\s*\d{1,6})?)\s*(?:\u20ac|EUR|\$|USD|\u00a3|GBP|\u20b4|UAH|грн\.?)?\s*$/i;
 
 function parseVisiblePrice(raw: string | undefined): number | undefined {
   if (!raw) return undefined;
   const trimmed = raw.trim();
   if (!SINGLE_PRICE_SHAPE.test(trimmed)) return undefined;
   // Two adjacent currency symbols \u21d2 two prices stuck together \u21d2 reject.
-  const currencyHits = trimmed.match(/\u20ac|EUR|\$|USD|\u00a3|GBP/gi)?.length ?? 0;
+  const currencyHits = trimmed.match(/\u20ac|EUR|\$|USD|\u00a3|GBP|\u20b4|UAH|грн\.?/gi)?.length ?? 0;
   if (currencyHits > 1) return undefined;
   // "1.999,-" / "1999,-" \u2192 integer euros, no cents
   if (/,-/.test(trimmed)) {
@@ -131,6 +134,11 @@ function resolveImageUrl(raw: string | undefined, baseUrl: string): string | und
   }
 }
 
+function resolvePopupHook(card: cheerio.Cheerio<DomNode>, pageUrl: string): string | undefined {
+  const hook = card.attr('data-tooltip-hook') ?? card.parents('[data-tooltip-hook]').first().attr('data-tooltip-hook');
+  return resolveImageUrl(hook, pageUrl);
+}
+
 /** Lazy-load attributes some sites use instead of plain `src`. We probe in
  *  order: the most specific data-* names first, then fall back to the actual
  *  rendered `src` (which may be a placeholder pixel on lazy-loaded images). */
@@ -145,6 +153,7 @@ function pickImageUrl(el: cheerio.Cheerio<DomNode>): string | undefined {
     'data-image',
     'data-cy-img-src',
     'data-bg',
+    'content',
     'srcset',
     'src',
   ];
@@ -196,10 +205,11 @@ export function extractProductCards(html: string, pageUrl: string, categoryPath?
         const href = $(a).attr('href') ?? '';
         return !/#|javascript:|mailto:|tel:/i.test(href);
       }).first();
-      const url = normalizeUrl(attr(linkEl, 'href'), { rootUrl, baseUrl: pageUrl });
+      const popupUrl = resolvePopupHook(card, pageUrl);
+      const url = popupUrl ?? normalizeUrl(attr(linkEl, 'href'), { rootUrl, baseUrl: pageUrl });
       if (!url) return;
       const title =
-        text(card.find('[itemprop="name"], [data-testid*="title" i], [data-test*="title" i], h2, h3').first()) ||
+        text(card.find('[itemprop="name"], [data-testid*="title" i], [data-test*="title" i], .js-product-name, .t750__title, h2, h3').first()) ||
         attr(card.find('img').first(), 'alt') ||
         text(linkEl);
       // Look for the EXPLICIT current-price element first. Many sites split
@@ -210,6 +220,7 @@ export function extractProductCards(html: string, pageUrl: string, categoryPath?
           .find(
             '[itemprop="price"], ' +
               '[data-testid*="price-current" i], [data-testid*="current-price" i], ' +
+              '.js-store-prod-price, .js-store-prod-price-val, .js-product-price, .t750__price, .t750__price-value, ' +
               '[class*="price--special" i], [class*="price--sale" i], [class*="price--current" i], ' +
               '[class*="price-current" i], [class*="sale-price" i], ' +
               'ins[class*="price" i]',
@@ -219,7 +230,8 @@ export function extractProductCards(html: string, pageUrl: string, categoryPath?
       const explicitOld = text(
         card
           .find(
-            '[class*="price--old" i], [class*="old-price" i], [class*="price--was" i], ' +
+              '.js-store-prod-price-old, .js-store-prod-price-old-val, .t750__price_old, ' +
+              '[class*="price--old" i], [class*="old-price" i], [class*="price--was" i], ' +
               '[class*="was-price" i], [class*="rrp" i], del[class*="price" i], s[class*="price" i]',
           )
           .first(),
@@ -262,7 +274,9 @@ export function extractProductCards(html: string, pageUrl: string, categoryPath?
       // If after all that oldPrice is still <= price, drop it (not a discount).
       if (price != null && oldPrice != null && oldPrice <= price) oldPrice = undefined;
 
-      const imageEl = card.find('img').first();
+      const imageEl = card
+        .find('img, .js-product-img, [data-original], meta[content*=".jpg"], meta[content*=".png"], meta[content*=".webp"]')
+        .first();
       const imageUrl = resolveImageUrl(pickImageUrl(imageEl), pageUrl);
       products.push({
         id: randomUUID(),
@@ -271,7 +285,7 @@ export function extractProductCards(html: string, pageUrl: string, categoryPath?
         title: title || undefined,
         price,
         oldPrice,
-        currency: detectCurrency(priceText) ?? (priceText?.includes('\u20ac') ? 'EUR' : undefined),
+        currency: detectCurrency(priceText),
         availability: detectAvailability(text(card)) ?? 'unknown',
         imageUrl,
         brand: text(card.find('[itemprop="brand"], [class*="brand" i]').first()) || undefined,
@@ -305,27 +319,40 @@ export function extractProductCardsWithSelectors(
     .slice(0, 200)
     .each((_, node) => {
       const card = $(node);
-      const linkEl = suggestion.cardLinkSelector ? safeFindWithin(card, suggestion.cardLinkSelector).first() : card.find('a[href]').first();
-      const url = normalizeUrl(attr(linkEl, 'href'), { rootUrl, baseUrl: pageUrl });
+      const usesPopupHook = suggestion.cardLinkSelector === '[data-tooltip-hook]';
+      const linkEl =
+        suggestion.cardLinkSelector && !usesPopupHook
+          ? safeFindWithin(card, suggestion.cardLinkSelector).first()
+          : card.find('a[href]').first();
+      const url = usesPopupHook
+        ? resolvePopupHook(card, pageUrl)
+        : normalizeUrl(attr(linkEl, 'href'), { rootUrl, baseUrl: pageUrl });
       if (!url) return;
       const title = suggestion.cardTitleSelector ? text(safeFindWithin(card, suggestion.cardTitleSelector).first()) : text(linkEl);
       const priceText = suggestion.cardPriceSelector ? text(safeFindWithin(card, suggestion.cardPriceSelector).first()) : undefined;
+      const oldPriceText = suggestion.cardOldPriceSelector ? text(safeFindWithin(card, suggestion.cardOldPriceSelector).first()) : undefined;
+      const availabilityText = suggestion.cardAvailabilitySelector
+        ? text(safeFindWithin(card, suggestion.cardAvailabilitySelector).first())
+        : undefined;
       const imageEl = suggestion.cardImageSelector ? safeFindWithin(card, suggestion.cardImageSelector).first() : card.find('img').first();
       const imageUrl = resolveImageUrl(pickImageUrl(imageEl), pageUrl);
       const price = parseVisiblePrice(priceText);
+      const oldPrice = parseVisiblePrice(oldPriceText);
       products.push({
         id: randomUUID(),
         url,
         normalizedUrl: url,
         title: title || undefined,
         price,
-        currency: detectCurrency(priceText) ?? (priceText?.includes('\u20ac') ? 'EUR' : undefined),
+        oldPrice: oldPrice != null && price != null && oldPrice > price ? oldPrice : undefined,
+        currency: detectCurrency(priceText) ?? detectCurrency(oldPriceText),
+        availability: detectAvailability(availabilityText) ?? 'unknown',
         imageUrl,
         categoryPath,
         categoryUrl: pageUrl,
         breadcrumbs,
         sourcePageUrl: pageUrl,
-        rawCardJson: { aiSuggestion: suggestion, priceText },
+        rawCardJson: { aiSuggestion: suggestion, priceText, oldPriceText },
         confidence: title && price != null ? Math.min(0.9, suggestion.confidence) : Math.min(0.6, suggestion.confidence),
         source: 'ai_assisted',
         errors: title && price != null ? [] : ['incomplete_card'],

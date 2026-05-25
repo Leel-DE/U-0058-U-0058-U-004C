@@ -140,6 +140,62 @@ describe('extractProductCards', () => {
     expect(products[1]?.imageUrl).toBe('https://x.test/cdn/small.jpg');
   });
 
+  it('extracts Tilda popup products with UAH price ranges and popup links', () => {
+    const starterTitle = '\u0421\u0442\u0430\u0440\u0442\u043e\u0432\u044b\u0439 \u043d\u0430\u0431\u043e\u0440';
+    const proTitle =
+      '\u041f\u0440\u043e\u0444\u0435\u0441\u0441\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u044b\u0439 \u043d\u0430\u0431\u043e\u0440';
+    const html = `
+      <div class="t-popup" data-tooltip-hook="#popup:starterKit">
+        <div class="t-popup__container js-product js-store-product js-store-product_single" data-product-gen-uid="1">
+          <div class="t-slds__bgimg js-product-img" data-original="https://cdn.test/start.jpg"></div>
+          <div class="js-product-name t750__title">${starterTitle}</div>
+          <span class="js-product-sku">SKU-StarterKit-91001</span>
+          <div class="js-store-prod-price">1699 - 1991 \u0433\u0440\u043d.</div>
+          <div class="js-store-prod-price-old">2375 \u0433\u0440\u043d.</div>
+        </div>
+      </div>
+      <div class="t-popup" data-tooltip-hook="#popup:proKit">
+        <div class="t-popup__container js-product js-store-product js-store-product_single" data-product-gen-uid="2">
+          <div class="t-slds__bgimg js-product-img" data-original="https://cdn.test/pro.jpg"></div>
+          <div class="js-product-name t750__title">${proTitle}</div>
+          <span class="js-product-sku">SKU-ProKit-91003</span>
+          <div class="js-store-prod-price">2499 - 2799 \u0433\u0440\u043d.</div>
+          <div class="js-store-prod-price-old">3500 \u0433\u0440\u043d.</div>
+        </div>
+      </div>`;
+
+    const products = extractProductCards(html, 'https://olinbar.tools/');
+    expect(products).toHaveLength(2);
+    expect(products[0]).toMatchObject({
+      title: starterTitle,
+      url: 'https://olinbar.tools/#popup:starterKit',
+      price: 1699,
+      oldPrice: 2375,
+      currency: 'UAH',
+      imageUrl: 'https://cdn.test/start.jpg',
+    });
+
+    const selected = extractProductCardsWithSelectors(html, 'https://olinbar.tools/', {
+      productCardSelector: '.js-product',
+      cardTitleSelector: '.js-product-name',
+      cardPriceSelector: '.js-store-prod-price',
+      cardOldPriceSelector: '.js-store-prod-price-old',
+      cardLinkSelector: '[data-tooltip-hook]',
+      cardImageSelector: '.js-product-img',
+      confidence: 0.8,
+      notes: [],
+    });
+    expect(selected).toHaveLength(2);
+    expect(selected[0]).toMatchObject({
+      title: starterTitle,
+      url: 'https://olinbar.tools/#popup:starterKit',
+      price: 1699,
+      oldPrice: 2375,
+      currency: 'UAH',
+      imageUrl: 'https://cdn.test/start.jpg',
+    });
+  });
+
   it('validates AI fallback selectors locally and ignores blocked links', () => {
     const html = `
       <div class="ai-card">

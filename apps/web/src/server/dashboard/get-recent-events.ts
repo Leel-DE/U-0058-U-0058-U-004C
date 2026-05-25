@@ -34,7 +34,7 @@ export async function getRecentEvents(orgId: string, filters: DashboardFilters):
       from price_snapshots ps
       join scoped_products cp on cp.id = ps.competitor_product_id
       where ps.org_id = ${orgId}
-        and ps.scraped_at >= ${filters.previousDateFrom}
+        and ps.scraped_at >= ${filters.previousDateFrom}::timestamptz
     )
     select *
     from (
@@ -45,7 +45,7 @@ export async function getRecentEvents(orgId: string, filters: DashboardFilters):
              'neutral' as status,
              '/competitors/products/' || ps.competitor_product_id::text as href
       from priced ps
-      where ps.scraped_at >= ${filters.dateFrom}
+      where ps.scraped_at >= ${filters.dateFrom}::timestamptz
         and ps.price is not null
         and ps.previous_price is not null
         and ps.price <> ps.previous_price
@@ -60,7 +60,7 @@ export async function getRecentEvents(orgId: string, filters: DashboardFilters):
              '/competitors/' || sp.competitor_id::text || '/discovery/' || sp.run_id::text || '/report' as href
       from site_discovery_products sp
       join scoped_stores st on st.id = sp.competitor_id
-      where sp.created_at >= ${filters.dateFrom}
+      where sp.created_at >= ${filters.dateFrom}::timestamptz
 
       union all
 
@@ -72,7 +72,7 @@ export async function getRecentEvents(orgId: string, filters: DashboardFilters):
              '/competitors/' || dr.competitor_id::text || '/discovery/' || dr.id::text as href
       from site_discovery_runs dr
       join scoped_stores st on st.id = dr.competitor_id
-      where coalesce(dr.finished_at, dr.started_at) >= ${filters.dateFrom}
+      where coalesce(dr.finished_at, dr.started_at) >= ${filters.dateFrom}::timestamptz
 
       union all
 
@@ -84,7 +84,7 @@ export async function getRecentEvents(orgId: string, filters: DashboardFilters):
              '/alerts' as href
       from notifications n
       where n.org_id = ${orgId}
-        and n.created_at >= ${filters.dateFrom}
+        and n.created_at >= ${filters.dateFrom}::timestamptz
 
       union all
 
@@ -97,7 +97,7 @@ export async function getRecentEvents(orgId: string, filters: DashboardFilters):
       from manual_scraping_sessions ms
       left join scoped_stores st on st.id = ms.competitor_id
       where ms.organization_id = ${orgId}
-        and ms.created_at >= ${filters.dateFrom}
+        and ms.created_at >= ${filters.dateFrom}::timestamptz
 
       union all
 
@@ -110,7 +110,7 @@ export async function getRecentEvents(orgId: string, filters: DashboardFilters):
       from scrape_runs sr
       left join scoped_stores st on st.id = sr.store_id
       where sr.org_id = ${orgId}
-        and sr.created_at >= ${filters.dateFrom}
+        and sr.created_at >= ${filters.dateFrom}::timestamptz
         and sr.status = 'failed'
 
       union all
@@ -123,7 +123,7 @@ export async function getRecentEvents(orgId: string, filters: DashboardFilters):
              '/exports' as href
       from exports e
       where e.org_id = ${orgId}
-        and e.created_at >= ${filters.dateFrom}
+        and e.created_at >= ${filters.dateFrom}::timestamptz
     ) events
     order by timestamp desc
     limit 50

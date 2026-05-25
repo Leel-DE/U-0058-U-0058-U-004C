@@ -13,9 +13,9 @@ export function parseDashboardFilters(input: Record<string, string | string[] | 
     categoryId: validUuid(one(input.category)) ? one(input.category) : undefined,
     activeOnly: one(input.activeOnly) !== 'false',
     failedOnly: one(input.failedOnly) === 'true',
-    dateFrom: start,
-    previousDateFrom: new Date(start.getTime() - periodMs),
-    previousDateTo: start,
+    dateFrom: start.toISOString(),
+    previousDateFrom: new Date(start.getTime() - periodMs).toISOString(),
+    previousDateTo: start.toISOString(),
   };
 }
 

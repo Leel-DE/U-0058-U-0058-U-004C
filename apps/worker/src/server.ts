@@ -5,6 +5,7 @@ import { fetchHtml } from './fetcher/cheerio.js';
 import { fetchHtmlBrowser, closePlaywright } from './fetcher/playwright.js';
 import { extract } from './parser/cascade.js';
 import { classifyResponse } from './detect/block.js';
+import { detectBaseSelectorsFromPages, findFirstProductUrl, type DetectionPage } from './detect/base-selectors.js';
 import { checkRobots } from './robots/check.js';
 import { throttleByDomain } from './rate-limit.js';
 import type { ScrapingRules, ErrorCode } from './types.js';
@@ -47,11 +48,13 @@ import {
   resumeDiscoveryRun,
   startDiscoveryRun,
 } from './discovery/discovery-runner.js';
+import { analyzeStore } from './discovery/store-analyzer.js';
 
 const logger = pino({ name: 'cr-worker', level: process.env.LOG_LEVEL ?? 'info' });
 const PORT = Number(process.env.PORT ?? 4000);
 const HOST = process.env.WORKER_HOST ?? '127.0.0.1';
 const SECRET = process.env.WORKER_SHARED_SECRET ?? '';
+const DEFAULT_USER_AGENT = 'CompetitorRadarBot/1.0 (+contact@example.com)';
 
 const scrapeReqSchema = z.object({
   url: z.string().url(),
@@ -84,6 +87,26 @@ const autoDetectReqSchema = z.object({
   respectRobots: z.boolean().default(true),
   userAgent: z.string().min(5),
   timeoutMs: z.number().int().min(1000).max(60_000).optional(),
+});
+
+const baseSelectorDetectReqSchema = z.object({
+  competitorId: z.string().uuid(),
+  homepageUrl: z.string().url(),
+  productUrl: z.string().url().nullable().optional(),
+  categoryUrl: z.string().url().nullable().optional(),
+  useAi: z.boolean().default(false),
+  strategy: z.enum(['cheerio', 'playwright', 'auto']).default('auto'),
+  respectRobots: z.boolean().default(true),
+  userAgent: z.string().min(5).default(DEFAULT_USER_AGENT),
+  timeoutMs: z.number().int().min(1000).max(60_000).optional(),
+});
+
+const analyzeStoreReqSchema = z.object({
+  homepageUrl: z.string().url(),
+  useAi: z.boolean().default(false),
+  respectRobots: z.boolean().default(true),
+  userAgent: z.string().min(5).default(DEFAULT_USER_AGENT),
+  timeoutMs: z.number().int().min(1000).max(90_000).optional(),
 });
 
 const manualSessionReqSchema = z.object({
@@ -124,10 +147,74 @@ const discoveryControlReqSchema = z.object({
   runId: z.string().uuid(),
 });
 
+
 const DEFAULT_PER_DOMAIN_DELAY_MS = 1_000;
 
 const app = Fastify({ logger: false });
 const fixtureFiller = '<p>Local fixture copy for offline scraping validation, selector testing, alert checks, dashboard refresh checks, and export generation checks.</p>'.repeat(10);
+
+async function fetchDetectionPage({
+  url,
+  strategy,
+  respectRobots,
+  userAgent,
+  timeoutMs,
+  warnings,
+  logs,
+}: {
+  url: string;
+  strategy: 'cheerio' | 'playwright' | 'auto';
+  respectRobots: boolean;
+  userAgent: string;
+  timeoutMs: number;
+  warnings: string[];
+  logs: Array<{ level: 'info' | 'warn'; message: string; context?: Record<string, unknown> }>;
+}): Promise<DetectionPage | null> {
+  const host = new URL(url).hostname;
+  if (respectRobots) {
+    const robots = await checkRobots(url, userAgent);
+    if (!robots.allowed) {
+      warnings.push(`robots.txt disallows ${url}`);
+      logs.push({ level: 'warn', message: 'robots blocked selector detection fetch', context: { url } });
+      return null;
+    }
+  }
+
+  await throttleByDomain(host, DEFAULT_PER_DOMAIN_DELAY_MS);
+  const fetchWith = async (mode: 'cheerio' | 'playwright') =>
+    mode === 'playwright'
+      ? fetchHtmlBrowser(url, userAgent, timeoutMs, getDomainStorageState(host))
+      : fetchHtml(url, userAgent, Math.min(timeoutMs, 20_000));
+
+  try {
+    let fetched = await fetchWith(strategy === 'playwright' ? 'playwright' : 'cheerio');
+    let cls = classifyResponse(fetched.status, fetched.html);
+    if (!cls.ok && strategy === 'auto' && fetched.strategy === 'cheerio') {
+      logs.push({
+        level: 'info',
+        message: 'retrying selector detection fetch with Playwright',
+        context: { url, reason: cls.code },
+      });
+      fetched = await fetchWith('playwright');
+      cls = classifyResponse(fetched.status, fetched.html);
+    }
+    if (!cls.ok) {
+      warnings.push(`Could not read ${url}: ${cls.code}`);
+      logs.push({ level: 'warn', message: 'selector detection fetch was not usable', context: { url, code: cls.code } });
+      return null;
+    }
+    logs.push({
+      level: 'info',
+      message: 'selector detection page fetched',
+      context: { url, finalUrl: fetched.finalUrl, strategy: fetched.strategy, httpStatus: fetched.status },
+    });
+    return { url: fetched.finalUrl || url, html: fetched.html };
+  } catch (err) {
+    warnings.push(`Could not fetch ${url}: ${(err as Error).message}`);
+    logs.push({ level: 'warn', message: 'selector detection fetch failed', context: { url, error: (err as Error).message } });
+    return null;
+  }
+}
 
 app.addHook('onRequest', async (req, reply) => {
   if (req.url === '/health' || req.url === '/robots.txt' || req.url.startsWith('/fixtures/')) return;
@@ -495,6 +582,135 @@ app.post('/scrape/auto-detect', async (req, reply) => {
       preview,
       cleanedDomHash: cleaned.hash,
       meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+    };
+  }
+});
+
+app.post('/scrape/detect-base-selectors', async (req, reply) => {
+  const parse = baseSelectorDetectReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, errorCode: 'http_error', message: 'invalid_payload', errors: parse.error.flatten().fieldErrors };
+  }
+
+  const {
+    homepageUrl,
+    productUrl,
+    categoryUrl,
+    useAi,
+    strategy,
+    respectRobots,
+    userAgent,
+    timeoutMs,
+  } = parse.data;
+  const startedAt = Date.now();
+  const warnings: string[] = [];
+  const logs: Array<{ level: 'info' | 'warn'; message: string; context?: Record<string, unknown> }> = [];
+  const fetchOpts = {
+    strategy,
+    respectRobots,
+    userAgent,
+    timeoutMs: timeoutMs ?? 45_000,
+    warnings,
+    logs,
+  };
+
+  const categoryPageUrl = categoryUrl ?? homepageUrl;
+  const categoryPage = await fetchDetectionPage({ url: categoryPageUrl, ...fetchOpts });
+
+  let resolvedProductUrl = productUrl ?? undefined;
+  if (!resolvedProductUrl && categoryPage) {
+    resolvedProductUrl = findFirstProductUrl(categoryPage.html, categoryPage.url);
+    if (resolvedProductUrl) {
+      logs.push({
+        level: 'info',
+        message: 'derived product URL from listing page',
+        context: { productUrl: resolvedProductUrl },
+      });
+    }
+  }
+
+  const productPage = resolvedProductUrl
+    ? await fetchDetectionPage({ url: resolvedProductUrl, ...fetchOpts })
+    : null;
+
+  if (!categoryPage && !productPage) {
+    reply.code(422);
+    return {
+      ok: false,
+      errorCode: 'parse_failed',
+      message: 'No readable product or category page was available for selector detection.',
+      warnings,
+      logs,
+      meta: { durationMs: Date.now() - startedAt },
+    };
+  }
+
+  try {
+    const detection = await detectBaseSelectorsFromPages({
+      homepageUrl,
+      productPage: productPage ?? undefined,
+      categoryPage: categoryPage ?? undefined,
+      useAi,
+      aiProvider: useAi ? getAIProvider() : null,
+    });
+    return {
+      ok: true,
+      ...detection,
+      warnings: [...warnings, ...detection.warnings],
+      logs: [...logs, ...detection.logs],
+      meta: {
+        durationMs: Date.now() - startedAt,
+        productUrl: productPage?.url ?? resolvedProductUrl,
+        categoryUrl: categoryPage?.url ?? categoryPageUrl,
+        aiEnabled: Boolean(useAi && getAIProvider()),
+      },
+    };
+  } catch (err) {
+    logger.warn({ err: (err as Error).message, homepageUrl, productUrl, categoryUrl }, 'base_selector_detection_failed');
+    reply.code(500);
+    return {
+      ok: false,
+      errorCode: 'http_error',
+      message: (err as Error).message,
+      warnings,
+      logs,
+      meta: { durationMs: Date.now() - startedAt },
+    };
+  }
+});
+
+app.post('/competitors/analyze-store', async (req, reply) => {
+  const parse = analyzeStoreReqSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, errorCode: 'http_error', message: 'invalid_payload', errors: parse.error.flatten().fieldErrors };
+  }
+
+  const startedAt = Date.now();
+  try {
+    const analysis = await analyzeStore({
+      ...parse.data,
+      aiProvider: parse.data.useAi ? getAIProvider() : null,
+    });
+    return {
+      ok: true,
+      ...analysis,
+      meta: {
+        durationMs: Date.now() - startedAt,
+        aiEnabled: Boolean(parse.data.useAi && getAIProvider()),
+      },
+    };
+  } catch (err) {
+    logger.warn({ err: (err as Error).message, homepageUrl: parse.data.homepageUrl }, 'store_analysis_failed');
+    reply.code(422);
+    return {
+      ok: false,
+      errorCode: 'store_analysis_failed',
+      message: (err as Error).message,
+      warnings: ['Store analysis could not complete. Retry or use manual setup.'],
+      logs: [{ level: 'warn', message: 'store analysis failed', context: { error: (err as Error).message } }],
+      meta: { durationMs: Date.now() - startedAt },
     };
   }
 });

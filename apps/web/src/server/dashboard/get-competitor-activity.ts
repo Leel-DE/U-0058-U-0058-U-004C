@@ -40,9 +40,9 @@ export async function getCompetitorActivity(orgId: string, filters: DashboardFil
         join competitor_products cp on cp.id = ps.competitor_product_id
         join scoped_stores st on st.id = cp.store_id
         where ps.org_id = ${orgId}
-          and ps.scraped_at >= ${filters.previousDateFrom}
+          and ps.scraped_at >= ${filters.previousDateFrom}::timestamptz
       ) x
-      where x.scraped_at >= ${filters.dateFrom}
+      where x.scraped_at >= ${filters.dateFrom}::timestamptz
       group by x.store_id
     ),
     failures as (
@@ -50,7 +50,7 @@ export async function getCompetitorActivity(orgId: string, filters: DashboardFil
       from scrape_runs sr
       join scoped_stores st on st.id = sr.store_id
       where sr.org_id = ${orgId}
-        and sr.created_at >= ${filters.dateFrom}
+        and sr.created_at >= ${filters.dateFrom}::timestamptz
         and sr.status = 'failed'
       group by sr.store_id
     )

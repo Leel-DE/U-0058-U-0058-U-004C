@@ -27,14 +27,14 @@ export async function getAvailabilityOverview(orgId: string, filters: DashboardF
       from price_snapshots ps
       join scoped_products cp on cp.id = ps.competitor_product_id
       where ps.org_id = ${orgId}
-        and ps.scraped_at >= ${filters.previousDateFrom}
+        and ps.scraped_at >= ${filters.previousDateFrom}::timestamptz
     )
     select
       (select count(*)::int from scoped_products where last_snapshot_availability = 'in_stock') as in_stock,
       (select count(*)::int from scoped_products where last_snapshot_availability = 'out_of_stock') as out_of_stock,
       (select count(*)::int from scoped_products where last_snapshot_availability is null or last_snapshot_availability = 'unknown') as unknown_count,
-      (select count(*)::int from stock_changes where scraped_at >= ${filters.dateFrom} and previous_availability = 'out_of_stock' and availability = 'in_stock') as back_in_stock,
-      (select count(*)::int from stock_changes where scraped_at >= ${filters.dateFrom} and previous_availability <> 'out_of_stock' and availability = 'out_of_stock') as newly_unavailable
+      (select count(*)::int from stock_changes where scraped_at >= ${filters.dateFrom}::timestamptz and previous_availability = 'out_of_stock' and availability = 'in_stock') as back_in_stock,
+      (select count(*)::int from stock_changes where scraped_at >= ${filters.dateFrom}::timestamptz and previous_availability <> 'out_of_stock' and availability = 'out_of_stock') as newly_unavailable
   `);
   const data = row ?? { in_stock: 0, out_of_stock: 0, unknown_count: 0, back_in_stock: 0, newly_unavailable: 0 };
   return {

@@ -42,6 +42,19 @@ const DOMAIN_STATE_TTL_MS = 30 * 60 * 1000;
 
 const STORAGE_DIR = process.env.MANUAL_SESSION_STORAGE_DIR ?? join(tmpdir(), 'cr-manual-storage');
 
+/**
+ * Manual sessions must look like a real browser — the user is about to solve
+ * a captcha by hand and the site needs to actually serve them content. The
+ * "CompetitorRadarBot/1.0" UA gets a 403 before any HTML reaches the page.
+ * Using a recent stable Chrome UA gives the user a real chance to interact.
+ */
+const REAL_BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+function looksLikeBot(ua: string): boolean {
+  return /bot|crawl|spider|competitorradar/i.test(ua);
+}
+
 export type ActivityPhase =
   | 'idle'
   | 'navigating'
@@ -338,11 +351,15 @@ export async function start(opts: StartOpts): Promise<SessionView> {
     join(tmpdir(), `cr-manual-${domain.replace(/[^a-z0-9.-]/gi, '_')}-`),
   );
 
+  // Override bot-flavoured UAs with a real Chrome UA for headed sessions — see
+  // REAL_BROWSER_USER_AGENT above for rationale.
+  const effectiveUserAgent = looksLikeBot(opts.userAgent) ? REAL_BROWSER_USER_AGENT : opts.userAgent;
+
   const session: InternalSession = {
     id,
     url: opts.url,
     domain,
-    userAgent: opts.userAgent,
+    userAgent: effectiveUserAgent,
     status: 'pending',
     logs: [],
     createdAt: Date.now(),
@@ -363,10 +380,14 @@ export async function start(opts: StartOpts): Promise<SessionView> {
   structuredLog('session.created', { id, domain, url: opts.url });
   log(session, `session created for ${opts.url}`);
 
+  if (effectiveUserAgent !== opts.userAgent) {
+    log(session, `replaced bot UA with real-browser UA for headed session`);
+  }
+
   try {
     const context = await chromium.launchPersistentContext(userDataDir, {
       headless: false,
-      userAgent: opts.userAgent,
+      userAgent: effectiveUserAgent,
       viewport: null,
       locale: 'en-US',
       args: ['--start-maximized'],
@@ -401,19 +422,38 @@ export async function start(opts: StartOpts): Promise<SessionView> {
     fire(session, 'browser_started', 'headed browser launched');
     bump(session);
 
+    // Navigation is best-effort: anti-bot sites (Cloudflare, PerimeterX, OBI)
+    // often return a 4xx/5xx or interstitial that Chromium surfaces as
+    // ERR_HTTP_RESPONSE_CODE_FAILURE / ERR_ABORTED. The whole point of a
+    // manual session is for the user to push past exactly that, so we must
+    // KEEP THE BROWSER OPEN even if the initial goto throws. The user can
+    // refresh, solve the challenge, or paste the URL again.
     session.activity.phase = 'navigating';
-    await session.page!.goto(opts.url, {
-      waitUntil: 'domcontentloaded',
-      timeout: opts.navigateTimeoutMs ?? 60_000,
-    });
-    fire(session, 'navigation_done', 'page loaded; waiting for user to act if needed');
+    try {
+      await session.page!.goto(opts.url, {
+        waitUntil: 'domcontentloaded',
+        timeout: opts.navigateTimeoutMs ?? 60_000,
+      });
+      fire(session, 'navigation_done', 'page loaded; waiting for user to act if needed');
+    } catch (navErr) {
+      log(session, `initial_goto_failed_but_browser_stays_open: ${(navErr as Error).message}`);
+      structuredLog('session.initial_goto_failed', {
+        id,
+        error: (navErr as Error).message,
+      });
+      // Pretend the navigation "completed" so we transition to waiting_for_user
+      // — the user will manually retry inside the visible browser window.
+      fire(session, 'navigation_done', 'initial goto failed; browser left open for manual retry');
+    }
     session.activity.phase = 'awaiting_user';
     bump(session);
   } catch (err) {
+    // Reached only if launchPersistentContext itself threw (chromium binary
+    // missing, sandbox blocked, etc.) — at that point there is no browser to
+    // keep open, so tear down whatever half-state exists.
     log(session, `start_failed: ${(err as Error).message}`);
     fire(session, 'fail', 'session failed during start');
     structuredLog('session.start_failed', { id, error: (err as Error).message });
-    // Tear down the half-built browser so we don't leak a chromium.
     await gracefulClose(session, 'failed').catch(() => null);
   }
   return viewOf(session);

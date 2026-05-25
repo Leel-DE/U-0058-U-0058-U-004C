@@ -1,15 +1,15 @@
 import Link from 'next/link';
-import { ArrowDown, ArrowUp, Download, GitCompare, PackageSearch, Plus, SlidersHorizontal } from 'lucide-react';
+import { Download, GitCompare, PackageSearch, Plus, SlidersHorizontal } from 'lucide-react';
 import { getContext } from '@/lib/auth';
-import { formatCurrency, formatPct, timeAgo } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { parseProductFilters } from '@/server/products/filters';
 import { getProductFilterOptions, getProductIntelligenceList } from '@/server/products/queries';
-import type { ProductGroupSummary, ProductIntelligenceRow, ProductStockStatus, ProductTrend } from '@/server/products/types';
-import { ProductSparkline } from './_components/product-charts';
+import type { ProductCluster, ProductGroupSummary, ProductIntelligenceRow } from '@/server/products/types';
+import { ProductsClusterTable } from './_components/products-cluster-table';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,9 +56,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         />
       ) : (
         <>
-          <IntelligenceSummary rows={data.rows} total={data.total} />
+          <IntelligenceSummary rows={data.rows} clusters={data.clusters} total={data.total} />
           <GroupSummary groups={data.groups} />
-          <ProductsTable rows={data.rows} page={data.page} pageSize={data.pageSize} total={data.total} />
+          <ProductsClusterTable
+            clusters={data.clusters}
+            page={data.page}
+            pageSize={data.pageSize}
+            total={data.total}
+          />
         </>
       )}
     </div>
@@ -173,19 +178,51 @@ function ProductFilters({
   );
 }
 
-function IntelligenceSummary({ rows, total }: { rows: ProductIntelligenceRow[]; total: number }) {
+function IntelligenceSummary({
+  rows,
+  clusters,
+  total,
+}: {
+  rows: ProductIntelligenceRow[];
+  clusters: ProductCluster[];
+  total: number;
+}) {
   const prices = rows.map((row) => row.currentAvgPrice).filter((price): price is number => price != null);
   const volatile = rows.filter((row) => row.volatility >= 10).length;
   const discounted = rows.filter((row) => row.activeDiscounts > 0).length;
   const stale = rows.filter((row) => row.stale).length;
+  const missingPrice = rows.filter((row) => row.missingPrice).length;
   const avg = prices.length > 0 ? prices.reduce((sum, price) => sum + price, 0) / prices.length : null;
+  const multiStore = clusters.filter((cluster) => cluster.storeCount > 1).length;
+  const savingsSamples = clusters
+    .map((cluster) => cluster.savingsPct)
+    .filter((value): value is number => value != null && value > 0);
+  const bestSavings = savingsSamples.length > 0 ? Math.max(...savingsSamples) : null;
+  const currency = clusters[0]?.currency ?? rows[0]?.currency ?? 'EUR';
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-      <Metric label="Products" value={total.toLocaleString()} />
-      <Metric label="Visible avg price" value={formatCurrency(avg, rows[0]?.currency ?? 'EUR')} />
-      <Metric label="Volatile visible" value={volatile.toLocaleString()} />
-      <Metric label="Discounted visible" value={discounted.toLocaleString()} />
-      <Metric label="Stale visible" value={stale.toLocaleString()} />
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+      <Metric label="Products" value={total.toLocaleString()} hint={`${clusters.length.toLocaleString()} groups`} />
+      <Metric label="Visible avg price" value={formatCurrency(avg, currency)} />
+      <Metric
+        label="Multi-store groups"
+        value={multiStore.toLocaleString()}
+        hint={`of ${clusters.length.toLocaleString()} visible`}
+      />
+      <Metric
+        label="Best savings"
+        value={bestSavings == null ? '—' : `−${bestSavings.toFixed(1)}%`}
+        hint={bestSavings == null ? 'no spread' : 'cheapest vs highest'}
+      />
+      <Metric
+        label="Discounted"
+        value={discounted.toLocaleString()}
+        hint={`${volatile.toLocaleString()} volatile`}
+      />
+      <Metric
+        label="Needs attention"
+        value={(missingPrice + stale).toLocaleString()}
+        hint={`${missingPrice} no price · ${stale} stale`}
+      />
     </div>
   );
 }
@@ -212,107 +249,13 @@ function GroupSummary({ groups }: { groups: ProductGroupSummary[] }) {
   );
 }
 
-function ProductsTable({ rows, page, pageSize, total }: { rows: ProductIntelligenceRow[]; page: number; pageSize: number; total: number }) {
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <CardTitle>Product intelligence table</CardTitle>
-            <CardDescription>{total.toLocaleString()} normalized/raw entities, server-paginated at {pageSize} rows.</CardDescription>
-          </div>
-          <Badge variant="outline">page {page}</Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="overflow-x-auto p-0">
-        <table className="w-full min-w-[1320px] text-sm">
-          <thead className="border-y bg-muted/30 text-left text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-4 py-2">Product</th>
-              <th className="px-4 py-2">Brand</th>
-              <th className="px-4 py-2">Category</th>
-              <th className="px-4 py-2">Competitors</th>
-              <th className="px-4 py-2">Min / Avg / Max</th>
-              <th className="px-4 py-2">Trend</th>
-              <th className="px-4 py-2">Volatility</th>
-              <th className="px-4 py-2">Stock</th>
-              <th className="px-4 py-2">Discounts</th>
-              <th className="px-4 py-2">Confidence</th>
-              <th className="px-4 py-2">Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={`${row.entityType}-${row.id}`} className="border-b last:border-0 hover:bg-muted/40">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
-                      {row.imageUrl ? (
-                        <span
-                          className="h-full w-full bg-contain bg-center bg-no-repeat"
-                          style={{ backgroundImage: `url("${row.imageUrl.replace(/"/g, '%22')}")` }}
-                          aria-hidden="true"
-                        />
-                      ) : <PackageSearch className="h-5 w-5 text-muted-foreground" />}
-                    </div>
-                    <div className="min-w-0">
-                      <Link href={`/products/${row.id}`} className="line-clamp-2 font-medium hover:underline">{row.canonicalTitle}</Link>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        <Badge variant={row.entityType === 'normalized' ? 'success' : 'secondary'}>{row.entityType === 'normalized' ? 'matched' : 'raw'}</Badge>
-                        {row.duplicateRisk ? <Badge variant="warning">duplicate risk</Badge> : null}
-                        {row.missingPrice ? <Badge variant="destructive">missing price</Badge> : null}
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-4 py-3">{row.brand ? <Link className="hover:underline" href={`/products/brands/${encodeURIComponent(row.brand)}`}>{row.brand}</Link> : 'Unknown'}</td>
-                <td className="px-4 py-3">{row.category ? <Link className="hover:underline" href={`/products/categories/${encodeURIComponent(row.category)}`}>{row.category}</Link> : 'Uncategorized'}</td>
-                <td className="px-4 py-3 tabular-nums">{row.competitorsCount}</td>
-                <td className="px-4 py-3 tabular-nums">
-                  <div>{formatCurrency(row.currentMinPrice, row.currency)}</div>
-                  <div className="text-muted-foreground">{formatCurrency(row.currentAvgPrice, row.currency)} / {formatCurrency(row.currentMaxPrice, row.currency)}</div>
-                </td>
-                <td className="px-4 py-3"><TrendCell trend={row.marketTrend} data={row.sparkline} /></td>
-                <td className="px-4 py-3"><VolatilityBadge value={row.volatility} /></td>
-                <td className="px-4 py-3"><StockBadge value={row.stockStatus} /></td>
-                <td className="px-4 py-3 tabular-nums">{row.activeDiscounts}</td>
-                <td className="px-4 py-3 tabular-nums">{Math.round(row.confidence * 100)}%</td>
-                <td className="px-4 py-3 text-muted-foreground">{timeAgo(row.updatedAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </CardContent>
-    </Card>
-  );
-}
-
-function TrendCell({ trend, data }: { trend: ProductTrend; data: ProductIntelligenceRow['sparkline'] }) {
-  const icon = trend === 'falling' ? <ArrowDown className="h-3.5 w-3.5" /> : trend === 'rising' ? <ArrowUp className="h-3.5 w-3.5" /> : null;
-  return (
-    <div className="flex items-center gap-2">
-      <div className={trend === 'falling' ? 'text-success' : trend === 'rising' ? 'text-destructive' : 'text-muted-foreground'}>{icon}</div>
-      <ProductSparkline data={data} />
-    </div>
-  );
-}
-
-function StockBadge({ value }: { value: ProductStockStatus }) {
-  const variant = value === 'in_stock' ? 'success' : value === 'out_of_stock' ? 'destructive' : value === 'mixed' ? 'warning' : 'secondary';
-  return <Badge variant={variant}>{value.replace(/_/g, ' ')}</Badge>;
-}
-
-function VolatilityBadge({ value }: { value: number }) {
-  const variant = value >= 20 ? 'destructive' : value >= 8 ? 'warning' : 'secondary';
-  return <Badge variant={variant}>{formatPct(value)}</Badge>;
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <Card>
       <CardContent className="p-4">
         <div className="text-xs uppercase text-muted-foreground">{label}</div>
         <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
+        {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
       </CardContent>
     </Card>
   );

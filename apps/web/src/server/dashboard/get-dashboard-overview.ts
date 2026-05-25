@@ -46,7 +46,7 @@ export async function getDashboardOverview(orgId: string, filters: DashboardFilt
       from price_snapshots ps
       join scoped_products cp on cp.id = ps.competitor_product_id
       where ps.org_id = ${orgId}
-        and ps.scraped_at >= ${filters.previousDateFrom}
+        and ps.scraped_at >= ${filters.previousDateFrom}::timestamptz
     )
     select
       (select count(*)::int from stores st where st.org_id = ${orgId} ${storeFilter({ ...filters, activeOnly: false })}) as total_competitors,
@@ -82,13 +82,13 @@ export async function getDashboardOverview(orgId: string, filters: DashboardFilt
       from price_snapshots ps
       join scoped_products cp on cp.id = ps.competitor_product_id
       where ps.org_id = ${orgId}
-        and ps.scraped_at >= ${filters.previousDateFrom}
+        and ps.scraped_at >= ${filters.previousDateFrom}::timestamptz
     )
     select
-      (select count(*)::int from priced where priced.scraped_at >= ${filters.previousDateFrom} and priced.scraped_at < ${filters.previousDateTo} and price is not null and previous_price is not null and price <> previous_price) as price_changes,
-      (select count(*)::int from priced where priced.scraped_at >= ${filters.previousDateFrom} and priced.scraped_at < ${filters.previousDateTo} and price is not null and previous_price is not null and price < previous_price) as price_drops,
-      (select count(*)::int from priced where priced.scraped_at >= ${filters.previousDateFrom} and priced.scraped_at < ${filters.previousDateTo} and price is not null and previous_price is not null and price > previous_price) as price_increases,
-      (select count(*)::int from scrape_runs sr join scoped_stores st on st.id = sr.store_id where sr.org_id = ${orgId} and sr.created_at >= ${filters.previousDateFrom} and sr.created_at < ${filters.previousDateTo} and sr.status = 'failed') as failed_runs
+      (select count(*)::int from priced where priced.scraped_at >= ${filters.previousDateFrom}::timestamptz and priced.scraped_at < ${filters.previousDateTo}::timestamptz and price is not null and previous_price is not null and price <> previous_price) as price_changes,
+      (select count(*)::int from priced where priced.scraped_at >= ${filters.previousDateFrom}::timestamptz and priced.scraped_at < ${filters.previousDateTo}::timestamptz and price is not null and previous_price is not null and price < previous_price) as price_drops,
+      (select count(*)::int from priced where priced.scraped_at >= ${filters.previousDateFrom}::timestamptz and priced.scraped_at < ${filters.previousDateTo}::timestamptz and price is not null and previous_price is not null and price > previous_price) as price_increases,
+      (select count(*)::int from scrape_runs sr join scoped_stores st on st.id = sr.store_id where sr.org_id = ${orgId} and sr.created_at >= ${filters.previousDateFrom}::timestamptz and sr.created_at < ${filters.previousDateTo}::timestamptz and sr.status = 'failed') as failed_runs
   `);
 
   const data = row ?? emptyOverview();

@@ -76,10 +76,22 @@ export function DiscoveryProgress({ storeId, runId }: { storeId: string; runId: 
 
       {status.status === 'manual_action_required' ? (
         <div className="rounded-md border border-amber-400/40 bg-amber-500/10 p-4 text-sm">
-          <div className="font-medium">Manual captcha action required</div>
+          <div className="flex items-center justify-between">
+            <div className="font-medium">Manual captcha action required</div>
+            {status.manualSession?.status ? (
+              <Badge variant="outline">session: {status.manualSession.status}</Badge>
+            ) : null}
+          </div>
           <p className="mt-1 text-muted-foreground">
-            A local browser window is open. Complete the challenge there, then resume discovery.
+            A local browser window should have opened. Complete the challenge there, then resume discovery.
           </p>
+          {status.manualSession?.logs?.length ? (
+            <div className="mt-3 max-h-32 overflow-auto rounded border border-amber-400/30 bg-background/60 p-2 font-mono text-xs text-muted-foreground">
+              {status.manualSession.logs.slice(-6).map((line, i) => (
+                <div key={i}>{line}</div>
+              ))}
+            </div>
+          ) : null}
           <Button className="mt-3" onClick={() => control('resume')} disabled={pending}>
             Continue after captcha
           </Button>
@@ -105,11 +117,22 @@ export function DiscoveryProgress({ storeId, runId }: { storeId: string; runId: 
         <div className="border-b px-3 py-2 text-sm font-medium">Live logs</div>
         <div className="max-h-96 space-y-1 overflow-auto p-3 font-mono text-xs">
           {logs.length === 0 ? <div className="text-muted-foreground">No logs yet.</div> : null}
-          {logs.map((log, index) => (
-            <div key={index} className={log.level === 'error' ? 'text-destructive' : log.level === 'warn' ? 'text-amber-500' : 'text-muted-foreground'}>
-              {String(log.createdAt ?? '')} [{String(log.level ?? 'info')}] {String(log.message ?? '')}
-            </div>
-          ))}
+          {logs.map((log, index) => {
+            const ctx = log.context as Record<string, unknown> | undefined;
+            const showCtx = (log.level === 'error' || log.level === 'warn') && ctx && Object.keys(ctx).length > 0;
+            return (
+              <div key={index} className={log.level === 'error' ? 'text-destructive' : log.level === 'warn' ? 'text-amber-500' : 'text-muted-foreground'}>
+                <div>
+                  {String(log.createdAt ?? '')} [{String(log.level ?? 'info')}] {String(log.message ?? '')}
+                </div>
+                {showCtx ? (
+                  <div className="ml-6 opacity-70 whitespace-pre-wrap break-all">
+                    {JSON.stringify(ctx, null, 2)}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

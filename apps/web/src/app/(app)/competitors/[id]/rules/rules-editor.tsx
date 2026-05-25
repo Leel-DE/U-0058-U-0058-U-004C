@@ -17,18 +17,12 @@ import { autoDetectScrapeUrl, continueManualBrowser, startManualBrowser, testScr
 import { ManualSessionPanel } from './manual-session-panel';
 import { z } from 'zod';
 import { useRouter } from 'next/navigation';
+import { CATEGORY_SELECTOR_FIELDS, PRODUCT_SELECTOR_FIELDS } from '../../_components/base-selector-detection';
 
 type FormValues = Omit<z.infer<typeof schemas.scrapingRulesSchema>, 'storeId'>;
 
-const SELECTOR_FIELDS: Array<{ key: keyof FormValues; label: string; placeholder?: string }> = [
-  { key: 'titleSelector', label: 'Title', placeholder: 'h1.product-title' },
-  { key: 'priceSelector', label: 'Price', placeholder: '.price .current' },
-  { key: 'oldPriceSelector', label: 'Old price (optional)', placeholder: '.price .was' },
-  { key: 'availabilitySelector', label: 'Availability', placeholder: '.stock-status' },
-  { key: 'imageSelector', label: 'Image', placeholder: '.product-gallery img' },
-  { key: 'shippingSelector', label: 'Shipping (optional)', placeholder: '.shipping-info' },
-  { key: 'ratingSelector', label: 'Rating (optional)', placeholder: '.rating-stars' },
-];
+const PRODUCT_FIELDS = PRODUCT_SELECTOR_FIELDS;
+const CATEGORY_FIELDS = CATEGORY_SELECTOR_FIELDS;
 
 export function RulesEditor({
   storeId,
@@ -86,7 +80,16 @@ export function RulesEditor({
   }
 
   function applyProductSuggestion(suggestion: Record<string, unknown>) {
-    for (const field of SELECTOR_FIELDS) {
+    for (const field of PRODUCT_FIELDS) {
+      const value = suggestion[field.key];
+      if (typeof value === 'string') {
+        form.setValue(field.key as never, value as never, { shouldDirty: true });
+      }
+    }
+  }
+
+  function applyCategorySuggestion(suggestion: Record<string, unknown>) {
+    for (const field of CATEGORY_FIELDS) {
       const value = suggestion[field.key];
       if (typeof value === 'string') {
         form.setValue(field.key as never, value as never, { shouldDirty: true });
@@ -116,6 +119,9 @@ export function RulesEditor({
       }
       if (pageType === 'product' && data.suggestion) {
         applyProductSuggestion(data.suggestion);
+      }
+      if (pageType === 'category' && data.suggestion) {
+        applyCategorySuggestion(data.suggestion);
       }
       toast.success(data.validation?.ok ? 'Selectors detected and validated' : 'Selectors detected; review before saving');
     });
@@ -197,17 +203,35 @@ export function RulesEditor({
           />
         </div>
 
-        {SELECTOR_FIELDS.map((f) => (
-          <div key={f.key} className="space-y-1.5">
-            <Label htmlFor={f.key}>{f.label}</Label>
-            <Input
-              id={f.key}
-              placeholder={f.placeholder}
-              {...form.register(f.key as never)}
-            />
-            <FormError message={(form.formState.errors as Record<string, { message?: string }>)[f.key]?.message} />
-          </div>
-        ))}
+        <div className="space-y-3">
+          <div className="text-sm font-medium">Product page selectors</div>
+          {PRODUCT_FIELDS.map((f) => (
+            <div key={f.key} className="space-y-1.5">
+              <Label htmlFor={f.key}>{f.label}</Label>
+              <Input
+                id={f.key}
+                placeholder={f.placeholder}
+                {...form.register(f.key as never)}
+              />
+              <FormError message={(form.formState.errors as Record<string, { message?: string }>)[f.key]?.message} />
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-3 border-t pt-4">
+          <div className="text-sm font-medium">Listing page selectors</div>
+          {CATEGORY_FIELDS.map((f) => (
+            <div key={f.key} className="space-y-1.5">
+              <Label htmlFor={f.key}>{f.label}</Label>
+              <Input
+                id={f.key}
+                placeholder={f.placeholder}
+                {...form.register(f.key as never)}
+              />
+              <FormError message={(form.formState.errors as Record<string, { message?: string }>)[f.key]?.message} />
+            </div>
+          ))}
+        </div>
 
         <div className="space-y-1.5">
           <Label htmlFor="priceRegex">Price strip regex (optional)</Label>

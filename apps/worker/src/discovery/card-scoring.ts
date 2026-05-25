@@ -37,6 +37,7 @@ const PRICE_PATTERNS: RegExp[] = [
   // match between two non-word chars (₽ + end-of-string).
   /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:₽|RUB|руб\.?|р\.)/i,
   /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:грн\.?|₴|UAH)/i,
+  /\b\d{1,6}(?:\s*[-–]\s*\d{1,6})?(?:[.,]\d{1,2})?\s?(?:грн\.?|₴|UAH)\b/i,
   /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:₸|тг|KZT)/i,
   /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:zł|PLN)/i,
   /\b\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{2})?\s?(?:Kč|CZK)/i,
@@ -96,6 +97,9 @@ export const PRODUCT_CLASS_HINTS: ReadonlyArray<string> = [
   't-store__card_btns-wrapper',
   't-store__card__btns-wrapper',
   't-store-card',
+  'js-product',
+  'js-store-product',
+  'js-store-product_single',
   // InSales / WordPress Storefront / OpenCart short forms
   'js-catalog-item',
   'js-item-product',
@@ -281,6 +285,8 @@ function titleLikeText(text: string): boolean {
 }
 
 function ancestorIsNoise($: CheerioAPI, el: Cheerio<DomNode>): string | undefined {
+  const className = el.attr('class') ?? '';
+  if (/\b(?:js-product|js-store-product|js-store-product_single)\b/.test(className)) return undefined;
   const ancestors = el.parents('header, footer, nav, [class*="header" i], [class*="footer" i], [role="navigation"], [class*="cookie" i], [class*="modal" i], [class*="popup" i], [class*="newsletter" i]');
   if (ancestors.length === 0) return undefined;
   const first = ancestors.first();

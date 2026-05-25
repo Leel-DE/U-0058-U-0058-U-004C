@@ -133,6 +133,59 @@ export const autoDetectScrapeUrl = defineAction(
   { roles: ['owner', 'manager'] },
 );
 
+export const detectBaseSelectors = defineAction(
+  schemas.detectBaseSelectorsSchema,
+  async (input, ctx) => {
+    const env = serverEnv();
+    const { store } = await loadStoreForWorker(input.competitorId, ctx.orgId);
+    const res = await fetch(`${env.WORKER_URL}/scrape/detect-base-selectors`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${env.WORKER_SHARED_SECRET}`,
+      },
+      body: JSON.stringify({
+        competitorId: input.competitorId,
+        homepageUrl: input.homepageUrl,
+        productUrl: input.productUrl || undefined,
+        categoryUrl: input.categoryUrl || undefined,
+        useAi: input.useAi,
+        strategy: store.jsRequired ? 'playwright' : 'auto',
+        respectRobots: store.respectRobots,
+        userAgent: USER_AGENT,
+        timeoutMs: 45_000,
+      }),
+      signal: AbortSignal.timeout(75_000),
+    });
+    return (await res.json()) as Record<string, unknown>;
+  },
+  { roles: ['owner', 'manager'] },
+);
+
+export const analyzeStore = defineAction(
+  schemas.analyzeStoreSchema,
+  async (input) => {
+    const env = serverEnv();
+    const res = await fetch(`${env.WORKER_URL}/competitors/analyze-store`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${env.WORKER_SHARED_SECRET}`,
+      },
+      body: JSON.stringify({
+        homepageUrl: input.homepageUrl,
+        useAi: input.useAi,
+        respectRobots: true,
+        userAgent: USER_AGENT,
+        timeoutMs: 60_000,
+      }),
+      signal: AbortSignal.timeout(95_000),
+    });
+    return (await res.json()) as Record<string, unknown>;
+  },
+  { roles: ['owner', 'manager'] },
+);
+
 export const startManualBrowser = defineAction(
   schemas.manualSessionStartSchema,
   async (input, ctx) => {

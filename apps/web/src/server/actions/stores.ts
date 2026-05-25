@@ -55,6 +55,94 @@ export const createStore = defineAction(
   { roles: ['owner', 'manager'] },
 );
 
+export const createAnalyzedStore = defineAction(
+  schemas.createAnalyzedStoreSchema,
+  async (input, ctx) => {
+    try {
+      const result = await db().transaction(async (tx) => {
+        const [store] = await tx
+          .insert(schema.stores)
+          .values({
+            orgId: ctx.orgId,
+            name: input.store.name,
+            domain: input.store.domain,
+            countryCode: input.store.countryCode,
+            currency: input.store.currency,
+            crawlFrequencyMinutes: input.recommendedSettings.crawlFrequencyMinutes,
+            crawlDelaySeconds: input.recommendedSettings.crawlDelaySeconds,
+            respectRobots: input.recommendedSettings.respectRobots,
+            jsRequired: input.recommendedSettings.jsRequired,
+            discoveryPreset: input.recommendedSettings.discoveryPreset,
+            discoveryDefaultsJson: input.recommendedSettings.discoveryDefaultsJson,
+            notes: input.notes,
+            createdBy: ctx.user.id,
+          })
+          .returning();
+        if (!store) throw new Error('Failed to create store');
+
+        const rules = {
+          ...input.selectors.productSelectors,
+          ...input.selectors.categorySelectors,
+        };
+        await tx.insert(schema.scrapingRules).values({
+          storeId: store.id,
+          titleSelector: rules.titleSelector ?? null,
+          priceSelector: rules.priceSelector ?? null,
+          oldPriceSelector: rules.oldPriceSelector ?? null,
+          availabilitySelector: rules.availabilitySelector ?? null,
+          imageSelector: rules.imageSelector ?? null,
+          brandSelector: rules.brandSelector ?? null,
+          skuSelector: rules.skuSelector ?? null,
+          breadcrumbsSelector: rules.breadcrumbsSelector ?? null,
+          productCardSelector: rules.productCardSelector ?? null,
+          cardTitleSelector: rules.cardTitleSelector ?? null,
+          cardPriceSelector: rules.cardPriceSelector ?? null,
+          cardOldPriceSelector: rules.cardOldPriceSelector ?? null,
+          cardImageSelector: rules.cardImageSelector ?? null,
+          cardLinkSelector: rules.cardLinkSelector ?? null,
+          cardAvailabilitySelector: rules.cardAvailabilitySelector ?? null,
+          paginationNextSelector: rules.paginationNextSelector ?? null,
+          loadMoreSelector: rules.loadMoreSelector ?? null,
+          priceRegex: rules.priceRegex ?? null,
+          useJsonLd: rules.useJsonLd ?? true,
+          useOpenGraph: rules.useOpenGraph ?? true,
+        });
+
+        await tx.insert(schema.competitorProfiles).values({
+          storeId: store.id,
+          framework: input.profile.framework,
+          renderingStrategy: input.profile.renderingStrategy,
+          scrapeDifficulty: input.profile.scrapeDifficulty,
+          antiBotRisk: input.profile.antiBotRisk,
+          recommendedMode: input.profile.recommendedMode,
+          detectionConfidence: String(input.profile.detectionConfidence),
+          autoDetectedSettingsJson: input.profile.autoDetectedSettingsJson,
+        });
+
+        return store;
+      });
+
+      await logAudit({
+        orgId: ctx.orgId,
+        userId: ctx.user.id,
+        action: 'store.create_analyzed',
+        entity: 'store',
+        entityId: result.id,
+        after: { name: result.name, domain: result.domain, profile: input.profile },
+      });
+      revalidatePath('/competitors');
+      return { id: result.id };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('stores_org_domain_unique')) {
+        throw new Error('A store with this domain already exists in your organization.');
+      }
+      throw err;
+    }
+  },
+  { roles: ['owner', 'manager'] },
+);
+
 export const updateStore = defineAction(
   schemas.updateStoreSchema,
   async (input, ctx) => {
@@ -118,6 +206,18 @@ export const updateScrapingRules = defineAction(
         oldPriceSelector: input.oldPriceSelector ?? null,
         availabilitySelector: input.availabilitySelector ?? null,
         imageSelector: input.imageSelector ?? null,
+        brandSelector: input.brandSelector ?? null,
+        skuSelector: input.skuSelector ?? null,
+        breadcrumbsSelector: input.breadcrumbsSelector ?? null,
+        productCardSelector: input.productCardSelector ?? null,
+        cardTitleSelector: input.cardTitleSelector ?? null,
+        cardPriceSelector: input.cardPriceSelector ?? null,
+        cardOldPriceSelector: input.cardOldPriceSelector ?? null,
+        cardImageSelector: input.cardImageSelector ?? null,
+        cardLinkSelector: input.cardLinkSelector ?? null,
+        cardAvailabilitySelector: input.cardAvailabilitySelector ?? null,
+        paginationNextSelector: input.paginationNextSelector ?? null,
+        loadMoreSelector: input.loadMoreSelector ?? null,
         shippingSelector: input.shippingSelector ?? null,
         ratingSelector: input.ratingSelector ?? null,
         priceRegex: input.priceRegex ?? null,
@@ -132,6 +232,18 @@ export const updateScrapingRules = defineAction(
           oldPriceSelector: input.oldPriceSelector ?? null,
           availabilitySelector: input.availabilitySelector ?? null,
           imageSelector: input.imageSelector ?? null,
+          brandSelector: input.brandSelector ?? null,
+          skuSelector: input.skuSelector ?? null,
+          breadcrumbsSelector: input.breadcrumbsSelector ?? null,
+          productCardSelector: input.productCardSelector ?? null,
+          cardTitleSelector: input.cardTitleSelector ?? null,
+          cardPriceSelector: input.cardPriceSelector ?? null,
+          cardOldPriceSelector: input.cardOldPriceSelector ?? null,
+          cardImageSelector: input.cardImageSelector ?? null,
+          cardLinkSelector: input.cardLinkSelector ?? null,
+          cardAvailabilitySelector: input.cardAvailabilitySelector ?? null,
+          paginationNextSelector: input.paginationNextSelector ?? null,
+          loadMoreSelector: input.loadMoreSelector ?? null,
           shippingSelector: input.shippingSelector ?? null,
           ratingSelector: input.ratingSelector ?? null,
           priceRegex: input.priceRegex ?? null,

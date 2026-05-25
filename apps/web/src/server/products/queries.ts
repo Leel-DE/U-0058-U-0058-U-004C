@@ -4,20 +4,27 @@ import { extractProductSpecs } from './spec-extractor';
 import { confidenceFromSignals, inferTrend } from './normalization';
 import { discountPct, priceRangeLabel, stockRatio, stockStatus, volatilityScore } from './metrics';
 import type {
+  CrossStoreCandidate,
   ProductAnalyticsPageData,
+  ProductCluster,
   ProductCompetitorComparison,
   ProductDetail,
   ProductDetailPoint,
   ProductEvent,
   ProductFilterOptions,
   ProductGroupSummary,
+  ProductIdentifiers,
   ProductInsight,
   ProductIntelligenceFilters,
   ProductIntelligenceList,
   ProductIntelligenceRow,
+  ProductMissingStore,
+  ProductPriceStats,
   ProductSparkPoint,
   ProductSpreadPoint,
+  ProductStoreMember,
 } from './types';
+import { buildStoreSearchUrl } from './search-urls';
 
 interface EntityRow extends Record<string, unknown> {
   total_count: number;
@@ -51,6 +58,8 @@ interface EntityRow extends Record<string, unknown> {
   has_gtin: boolean;
   has_sku: boolean;
   sparkline: unknown;
+  members: unknown;
+  cluster_key: string | null;
 }
 
 interface FilterOptionRow extends Record<string, unknown> {
@@ -120,6 +129,7 @@ export async function getProductIntelligenceList(
   const mapped = rows.map(mapEntityRow);
   return {
     rows: mapped,
+    clusters: buildClusters(mapped),
     groups: buildGroups(mapped, filters.groupBy),
     total: Number(rows[0]?.total_count ?? 0),
     page: filters.page,
@@ -144,17 +154,34 @@ export async function getProductDetail(orgId: string, id: string): Promise<Produ
   if (!header) return null;
   const entity = mapEntityRow(header);
 
-  const competitors = await getProductCompetitors(orgId, id, entity.entityType);
-  const timeline = await getProductTimeline(orgId, id, entity.entityType);
+  const [competitors, timeline, identifiersAndOwn, missingFromStores] = await Promise.all([
+    getProductCompetitors(orgId, id, entity.entityType),
+    getProductTimeline(orgId, id, entity.entityType),
+    getProductIdentifiers(orgId, id, entity.entityType),
+    getMissingFromStores(orgId, id, entity.entityType, entity.canonicalTitle, entity.brand),
+  ]);
+
   const spread = buildSpreadTimeline(timeline);
   const events = buildProductEvents(timeline, competitors);
   const prices = competitors.map((row) => row.currentPrice).filter((price): price is number => price != null);
   const highestPrice = prices.length > 0 ? Math.max(...prices) : null;
+  const minPrice = prices.length > 0 ? Math.min(...prices) : null;
   const cheapest = competitors
     .filter((row) => row.currentPrice != null)
     .sort((a, b) => Number(a.currentPrice) - Number(b.currentPrice))[0];
   const activeDiscounts = competitors.map((row) => row.discountPct).filter((value): value is number => value != null);
   const inStockCount = competitors.filter((row) => row.availability === 'in_stock').length;
+  const outOfStockCount = competitors.filter((row) => row.availability === 'out_of_stock').length;
+
+  const priceStats = computePriceStats(timeline);
+  const spreadAmount =
+    entity.currentMinPrice != null && entity.currentMaxPrice != null
+      ? Number((entity.currentMaxPrice - entity.currentMinPrice).toFixed(2))
+      : null;
+  const spreadPct =
+    entity.currentMinPrice != null && entity.currentMaxPrice != null && entity.currentMaxPrice > 0
+      ? Number((((entity.currentMaxPrice - entity.currentMinPrice) / entity.currentMaxPrice) * 100).toFixed(1))
+      : null;
 
   return {
     id: entity.id,
@@ -167,24 +194,423 @@ export async function getProductDetail(orgId: string, id: string): Promise<Produ
     confidence: entity.confidence,
     competitorsCount: entity.competitorsCount,
     lastUpdated: entity.updatedAt,
+    url: identifiersAndOwn.url,
+    myPrice: identifiersAndOwn.myPrice,
+    identifiers: identifiersAndOwn.identifiers,
     overview: {
       cheapestCompetitor: cheapest?.competitorName ?? null,
       highestPrice,
+      minPrice,
       averagePrice: entity.currentAvgPrice,
       currentDiscountPct: activeDiscounts.length > 0 ? Math.max(...activeDiscounts) : null,
       stockRatio: stockRatio(inStockCount, competitors.length),
       volatilityScore: entity.volatility,
       marketTrend: entity.marketTrend,
-      competitorSpread: entity.currentMinPrice != null && entity.currentMaxPrice != null
-        ? Number((entity.currentMaxPrice - entity.currentMinPrice).toFixed(2))
-        : null,
+      competitorSpread: spreadAmount,
+      spreadPct,
+      inStockCount,
+      outOfStockCount,
       currency: entity.currency,
     },
+    priceStats,
     competitors,
+    missingFromStores,
     priceTimeline: timeline,
     spreadTimeline: spread,
     events,
   };
+}
+
+interface IdentifierBundle {
+  identifiers: ProductIdentifiers;
+  url: string | null;
+  myPrice: number | null;
+}
+
+interface IdentifierRow extends Record<string, unknown> {
+  brand: string | null;
+  sku: string | null;
+  gtin: string | null;
+  url: string | null;
+  my_price: string | null;
+  competitor_skus: string[] | null;
+  competitor_gtins: string[] | null;
+  competitor_titles: string[] | null;
+}
+
+async function getProductIdentifiers(
+  orgId: string,
+  id: string,
+  entityType: 'normalized' | 'raw_competitor',
+): Promise<IdentifierBundle> {
+  if (entityType === 'normalized') {
+    const [row] = await db().execute<IdentifierRow>(sql`
+      with my as (
+        select id, brand, sku, gtin, url, my_price::text as my_price
+        from my_products
+        where org_id = ${orgId} and id = ${id}
+        limit 1
+      ),
+      matched as (
+        select cp.sku, cp.gtin, cp.title
+        from product_matches pm
+        join competitor_products cp on cp.id = pm.competitor_product_id
+        where pm.org_id = ${orgId}
+          and pm.my_product_id = ${id}
+          and pm.status = 'confirmed'
+      )
+      select
+        my.brand,
+        my.sku,
+        my.gtin,
+        my.url,
+        my.my_price,
+        array_remove(array(select distinct sku from matched where sku is not null and sku <> ''), null) as competitor_skus,
+        array_remove(array(select distinct gtin from matched where gtin is not null and gtin <> ''), null) as competitor_gtins,
+        array_remove(array(select distinct title from matched where title is not null and title <> ''), null) as competitor_titles
+      from my
+    `);
+    if (!row) return emptyIdentifierBundle();
+    return {
+      identifiers: {
+        brand: row.brand,
+        sku: row.sku,
+        gtin: row.gtin,
+        competitorSkus: row.competitor_skus ?? [],
+        competitorGtins: row.competitor_gtins ?? [],
+        competitorTitles: row.competitor_titles ?? [],
+      },
+      url: row.url,
+      myPrice: numberOrNull(row.my_price),
+    };
+  }
+  const [row] = await db().execute<IdentifierRow>(sql`
+    select brand, sku, gtin, url, null::text as my_price,
+           array[]::text[] as competitor_skus,
+           array[]::text[] as competitor_gtins,
+           array[]::text[] as competitor_titles
+    from competitor_products
+    where org_id = ${orgId} and id = ${id}
+    limit 1
+  `);
+  if (!row) return emptyIdentifierBundle();
+  return {
+    identifiers: {
+      brand: row.brand,
+      sku: row.sku,
+      gtin: row.gtin,
+      competitorSkus: row.sku ? [row.sku] : [],
+      competitorGtins: row.gtin ? [row.gtin] : [],
+      competitorTitles: [],
+    },
+    url: row.url,
+    myPrice: null,
+  };
+}
+
+function emptyIdentifierBundle(): IdentifierBundle {
+  return {
+    identifiers: { brand: null, sku: null, gtin: null, competitorSkus: [], competitorGtins: [], competitorTitles: [] },
+    url: null,
+    myPrice: null,
+  };
+}
+
+interface MissingStoreRow extends Record<string, unknown> {
+  store_id: string;
+  store_name: string;
+  store_domain: string | null;
+  currency: string | null;
+  status: string | null;
+  framework: string | null;
+  discovery_preset: string | null;
+  scraped_count: number;
+}
+
+async function getMissingFromStores(
+  orgId: string,
+  id: string,
+  entityType: 'normalized' | 'raw_competitor',
+  title: string,
+  brand: string | null,
+): Promise<ProductMissingStore[]> {
+  const matchedStoresExpr = entityType === 'normalized'
+    ? sql`
+        select distinct cp.store_id
+        from product_matches pm
+        join competitor_products cp on cp.id = pm.competitor_product_id
+        where pm.org_id = ${orgId}
+          and pm.my_product_id = ${id}
+          and pm.status = 'confirmed'
+      `
+    : sql`
+        select store_id
+        from competitor_products
+        where org_id = ${orgId} and id = ${id}
+      `;
+  const rows = await db().execute<MissingStoreRow>(sql`
+    select
+      st.id::text as store_id,
+      st.name as store_name,
+      st.domain as store_domain,
+      st.currency,
+      st.status::text as status,
+      cprof.framework,
+      st.discovery_preset,
+      (
+        select count(*)::int from competitor_products cp
+        where cp.org_id = ${orgId} and cp.store_id = st.id
+      ) as scraped_count
+    from stores st
+    left join competitor_profiles cprof on cprof.store_id = st.id
+    where st.org_id = ${orgId}
+      and st.id not in (${matchedStoresExpr})
+    order by st.status asc, st.name asc
+  `);
+  const query = [brand, title].filter(Boolean).join(' ').trim() || title;
+  return rows.map((row) => ({
+    storeId: row.store_id,
+    storeName: row.store_name,
+    storeDomain: row.store_domain,
+    currency: row.currency,
+    status: row.status,
+    scrapedCount: Number(row.scraped_count ?? 0),
+    searchUrl: buildStoreSearchUrl(query, {
+      domain: row.store_domain ?? '',
+      framework: row.framework,
+      discoveryPreset: row.discovery_preset,
+    }),
+  }));
+}
+
+interface CrossStoreCandidateRow extends Record<string, unknown> {
+  competitor_product_id: string;
+  store_id: string;
+  store_name: string;
+  store_domain: string | null;
+  title: string;
+  url: string;
+  image_url: string | null;
+  brand: string | null;
+  sku: string | null;
+  gtin: string | null;
+  price: string | null;
+  old_price: string | null;
+  currency: string | null;
+  availability: string | null;
+  last_scraped_at: string | null;
+  title_sim: string | null;
+  gtin_match: boolean;
+  sku_match: boolean;
+  brand_match: boolean;
+}
+
+/**
+ * Find candidate competitor_products from the org's already-scraped data
+ * that look like the same model as the source product. No external network
+ * call — pure DB lookup over GTIN/SKU exact match + Postgres pg_trgm title
+ * similarity, scoped to the given stores (defaults to all stores where the
+ * product is not yet matched).
+ */
+export async function findCrossStoreCandidates(
+  orgId: string,
+  id: string,
+  entityType: 'normalized' | 'raw_competitor',
+  options: { storeIds?: string[]; perStoreLimit?: number; minSimilarity?: number } = {},
+): Promise<Record<string, CrossStoreCandidate[]>> {
+  const perStoreLimit = options.perStoreLimit ?? 6;
+  const minSimilarity = options.minSimilarity ?? 0.2;
+  const storeFilter = options.storeIds && options.storeIds.length > 0
+    ? sql`and st.id = any(${options.storeIds}::uuid[])`
+    : sql``;
+
+  const sourceCte = entityType === 'normalized'
+    ? sql`
+        select id::text as id, name as title, brand, sku, gtin
+        from my_products
+        where org_id = ${orgId} and id = ${id}
+        limit 1
+      `
+    : sql`
+        select id::text as id, coalesce(title, url) as title, brand, sku, gtin
+        from competitor_products
+        where org_id = ${orgId} and id = ${id}
+        limit 1
+      `;
+
+  // Build a per-store ranked list using a window function so we can keep
+  // perStoreLimit candidates per store without making N queries.
+  const rows = await db().execute<CrossStoreCandidateRow>(sql`
+    with src as (${sourceCte}),
+    candidates as (
+      select
+        cp.id::text as competitor_product_id,
+        st.id::text as store_id,
+        st.name as store_name,
+        st.domain as store_domain,
+        coalesce(cp.title, cp.url) as title,
+        cp.url,
+        cp.image_url,
+        cp.brand,
+        cp.sku,
+        cp.gtin,
+        cp.last_snapshot_price::text as price,
+        null::text as old_price,
+        cp.last_snapshot_currency as currency,
+        cp.last_snapshot_availability as availability,
+        cp.last_scraped_at::text as last_scraped_at,
+        similarity(coalesce(cp.title, ''), src.title)::text as title_sim,
+        (cp.gtin is not null and src.gtin is not null and cp.gtin = src.gtin) as gtin_match,
+        (cp.sku is not null and src.sku is not null and lower(cp.sku) = lower(src.sku)) as sku_match,
+        (cp.brand is not null and src.brand is not null and lower(cp.brand) = lower(src.brand)) as brand_match
+      from competitor_products cp
+      join stores st on st.id = cp.store_id
+      cross join src
+      where cp.org_id = ${orgId}
+        ${storeFilter}
+        and not exists (
+          select 1 from product_matches pm
+          where pm.org_id = ${orgId}
+            and pm.competitor_product_id = cp.id
+            and ${entityType === 'normalized' ? sql`pm.my_product_id = src.id::uuid` : sql`true`}
+            and pm.status in ('confirmed', 'rejected')
+        )
+        and (
+          (cp.gtin is not null and src.gtin is not null and cp.gtin = src.gtin)
+          or (cp.sku is not null and src.sku is not null and lower(cp.sku) = lower(src.sku))
+          or similarity(coalesce(cp.title, ''), src.title) >= ${minSimilarity}
+        )
+    ),
+    ranked as (
+      select *,
+        row_number() over (
+          partition by store_id
+          order by
+            case when gtin_match then 1 when sku_match then 2 else 3 end,
+            title_sim::numeric desc nulls last
+        ) as rn
+      from candidates
+    )
+    select *
+    from ranked
+    where rn <= ${perStoreLimit}
+    order by store_id, rn
+  `);
+
+  const grouped: Record<string, CrossStoreCandidate[]> = {};
+  for (const row of rows) {
+    const candidate = mapCrossStoreCandidate(row);
+    const bucket = grouped[row.store_id] ?? [];
+    bucket.push(candidate);
+    grouped[row.store_id] = bucket;
+  }
+  return grouped;
+}
+
+function mapCrossStoreCandidate(row: CrossStoreCandidateRow): CrossStoreCandidate {
+  const titleSim = numberOrNull(row.title_sim) ?? 0;
+  let similarity = titleSim;
+  let method: CrossStoreCandidate['matchMethod'] = 'title_similarity';
+  const reasons: string[] = [];
+
+  if (row.gtin_match) {
+    similarity = 0.99;
+    method = 'gtin';
+    reasons.push('GTIN exact match');
+  } else if (row.sku_match) {
+    similarity = 0.95;
+    method = 'sku';
+    reasons.push('SKU exact match');
+  } else {
+    const brandBonus = row.brand_match ? 0.12 : 0;
+    similarity = Math.min(0.92, titleSim + brandBonus);
+    if (row.brand_match && titleSim >= 0.35) {
+      method = 'brand_model';
+      reasons.push(`Brand match + title similarity ${(titleSim * 100).toFixed(0)}%`);
+    } else {
+      reasons.push(`Title similarity ${(titleSim * 100).toFixed(0)}%`);
+    }
+  }
+
+  return {
+    competitorProductId: row.competitor_product_id,
+    storeId: row.store_id,
+    storeName: row.store_name,
+    storeDomain: row.store_domain,
+    title: row.title,
+    url: row.url,
+    imageUrl: row.image_url,
+    brand: row.brand,
+    sku: row.sku,
+    gtin: row.gtin,
+    price: numberOrNull(row.price),
+    oldPrice: numberOrNull(row.old_price),
+    currency: row.currency,
+    availability: row.availability,
+    lastScrapedAt: row.last_scraped_at,
+    similarity: Number(similarity.toFixed(3)),
+    matchMethod: method,
+    reasons,
+  };
+}
+
+function computePriceStats(timeline: ProductDetailPoint[]): ProductPriceStats {
+  const prices = timeline
+    .map((point) => point.price)
+    .filter((value): value is number => value != null);
+  if (prices.length === 0) {
+    return { median: null, best30d: null, worst30d: null, best90d: null, worst90d: null, cheapestStreakDays: null };
+  }
+  const sorted = [...prices].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)] ?? null;
+  const now = Date.now();
+  const in30 = timeline.filter((point) => point.price != null && now - new Date(point.date).getTime() <= 30 * 86_400_000);
+  const in90 = timeline.filter((point) => point.price != null && now - new Date(point.date).getTime() <= 90 * 86_400_000);
+  const best30d = in30.length > 0 ? Math.min(...in30.map((p) => p.price as number)) : null;
+  const worst30d = in30.length > 0 ? Math.max(...in30.map((p) => p.price as number)) : null;
+  const best90d = in90.length > 0 ? Math.min(...in90.map((p) => p.price as number)) : null;
+  const worst90d = in90.length > 0 ? Math.max(...in90.map((p) => p.price as number)) : null;
+  return {
+    median: median != null ? Number(median.toFixed(2)) : null,
+    best30d: best30d != null ? Number(best30d.toFixed(2)) : null,
+    worst30d: worst30d != null ? Number(worst30d.toFixed(2)) : null,
+    best90d: best90d != null ? Number(best90d.toFixed(2)) : null,
+    worst90d: worst90d != null ? Number(worst90d.toFixed(2)) : null,
+    cheapestStreakDays: estimateCheapestStreak(timeline),
+  };
+}
+
+function estimateCheapestStreak(timeline: ProductDetailPoint[]): number | null {
+  const byDay = new Map<string, ProductDetailPoint[]>();
+  for (const point of timeline) {
+    if (point.price == null) continue;
+    const day = point.date.slice(0, 10);
+    const bucket = byDay.get(day) ?? [];
+    bucket.push(point);
+    byDay.set(day, bucket);
+  }
+  if (byDay.size === 0) return null;
+  const days = Array.from(byDay.entries()).sort(([a], [b]) => b.localeCompare(a));
+  let leader: string | null = null;
+  let streak = 0;
+  let currentStreak = 0;
+  for (const [, points] of days) {
+    const cheapest = points.sort((a, b) => Number(a.price) - Number(b.price))[0];
+    if (!cheapest) continue;
+    if (leader == null) {
+      leader = cheapest.competitorName;
+      currentStreak = 1;
+      streak = 1;
+      continue;
+    }
+    if (cheapest.competitorName === leader) {
+      currentStreak += 1;
+      streak = Math.max(streak, currentStreak);
+    } else {
+      break;
+    }
+  }
+  return streak > 0 ? streak : null;
 }
 
 export async function getCompareProducts(orgId: string, ids: string[]): Promise<ProductDetail[]> {
@@ -401,10 +827,15 @@ function entitiesQuery(orgId: string, filters: ProductIntelligenceFilters, final
         c.name as category,
         coalesce(mp.image_url, (array_agg(cp.image_url) filter (where cp.image_url is not null))[1]) as image_url,
         count(distinct cp.id)::int as competitors_count,
-        min(ls.price) as current_min_price,
-        avg(ls.price)::numeric(12,2) as current_avg_price,
-        max(ls.price) as current_max_price,
-        coalesce((array_agg(ls.currency) filter (where ls.currency is not null))[1], mp.currency, 'EUR') as currency,
+        min(coalesce(ls.price, cp.last_snapshot_price::numeric)) as current_min_price,
+        avg(coalesce(ls.price, cp.last_snapshot_price::numeric))::numeric(12,2) as current_avg_price,
+        max(coalesce(ls.price, cp.last_snapshot_price::numeric)) as current_max_price,
+        coalesce(
+          (array_agg(ls.currency) filter (where ls.currency is not null))[1],
+          (array_agg(cp.last_snapshot_currency) filter (where cp.last_snapshot_currency is not null))[1],
+          mp.currency,
+          'EUR'
+        ) as currency,
         mh.hist_min,
         mh.hist_avg,
         mh.hist_max,
@@ -413,21 +844,38 @@ function entitiesQuery(orgId: string, filters: ProductIntelligenceFilters, final
         count(distinct cp.id) filter (where coalesce(ls.availability::text, cp.last_snapshot_availability) = 'in_stock')::int as in_stock_count,
         count(distinct cp.id) filter (where coalesce(ls.availability::text, cp.last_snapshot_availability) = 'out_of_stock')::int as out_stock_count,
         count(distinct cp.id) filter (where coalesce(ls.availability::text, cp.last_snapshot_availability) is null or coalesce(ls.availability::text, cp.last_snapshot_availability) = 'unknown')::int as unknown_stock_count,
-        count(distinct cp.id) filter (where ls.old_price is not null and ls.price is not null and ls.old_price > ls.price)::int as active_discounts,
+        count(distinct cp.id) filter (where ls.old_price is not null and coalesce(ls.price, cp.last_snapshot_price::numeric) is not null and ls.old_price > coalesce(ls.price, cp.last_snapshot_price::numeric))::int as active_discounts,
         greatest(max(cp.last_change_at), max(cp.last_scraped_at), mp.updated_at)::text as last_change,
         mp.created_at::text as discovered_at,
         greatest(max(cp.last_scraped_at), mp.updated_at)::text as updated_at,
         true as matched,
         count(distinct cp.id) > 1 as duplicate_risk,
         coalesce(greatest(max(cp.last_scraped_at), mp.updated_at), mp.created_at) < now() - interval '24 hours' as stale,
-        min(ls.price) is null as missing_price,
+        min(coalesce(ls.price, cp.last_snapshot_price::numeric)) is null as missing_price,
         bool_or(mp.gtin is not null or cp.gtin is not null) as has_gtin,
         bool_or(mp.sku is not null or cp.sku is not null) as has_sku,
         coalesce(ms.sparkline, '[]'::jsonb) as sparkline,
+        coalesce(
+          jsonb_agg(distinct jsonb_build_object(
+            'competitorProductId', cp.id::text,
+            'storeId', cp.store_id::text,
+            'storeName', (select s2.name from stores s2 where s2.id = cp.store_id),
+            'title', coalesce(cp.title, cp.url),
+            'url', cp.url,
+            'imageUrl', cp.image_url,
+            'price', coalesce(ls.price, cp.last_snapshot_price::numeric),
+            'oldPrice', ls.old_price,
+            'currency', coalesce(ls.currency, cp.last_snapshot_currency, mp.currency, 'EUR'),
+            'availability', coalesce(ls.availability::text, cp.last_snapshot_availability),
+            'lastScrapedAt', coalesce(ls.scraped_at, cp.last_scraped_at)::text
+          )) filter (where cp.id is not null),
+          '[]'::jsonb
+        ) as members,
         lower(concat_ws(' ', mp.name, mp.brand, mp.sku, mp.gtin, string_agg(distinct cp.title, ' '), string_agg(distinct cp.sku, ' '), string_agg(distinct cp.gtin, ' '))) as search_text,
         lower(concat_ws(' ', mp.name, mp.brand, string_agg(distinct cp.title, ' '))) as spec_text,
         array_agg(distinct cp.store_id::text) filter (where cp.store_id is not null) as competitor_ids,
-        mp.category_id::text as category_id
+        mp.category_id::text as category_id,
+        coalesce(nullif(lower(mp.gtin), ''), 'mp:' || mp.id::text) as cluster_key
       from my_products mp
       left join categories c on c.id = mp.category_id
       left join confirmed_matches cm on cm.my_product_id = mp.id
@@ -447,9 +895,9 @@ function entitiesQuery(orgId: string, filters: ProductIntelligenceFilters, final
         null::text as category,
         cp.image_url,
         1::int as competitors_count,
-        ls.price as current_min_price,
-        ls.price as current_avg_price,
-        ls.price as current_max_price,
+        coalesce(ls.price, cp.last_snapshot_price::numeric) as current_min_price,
+        coalesce(ls.price, cp.last_snapshot_price::numeric) as current_avg_price,
+        coalesce(ls.price, cp.last_snapshot_price::numeric) as current_max_price,
         coalesce(ls.currency, cp.last_snapshot_currency, 'EUR') as currency,
         rh.hist_min,
         rh.hist_avg,
@@ -459,21 +907,39 @@ function entitiesQuery(orgId: string, filters: ProductIntelligenceFilters, final
         case when coalesce(ls.availability::text, cp.last_snapshot_availability) = 'in_stock' then 1 else 0 end as in_stock_count,
         case when coalesce(ls.availability::text, cp.last_snapshot_availability) = 'out_of_stock' then 1 else 0 end as out_stock_count,
         case when coalesce(ls.availability::text, cp.last_snapshot_availability) is null or coalesce(ls.availability::text, cp.last_snapshot_availability) = 'unknown' then 1 else 0 end as unknown_stock_count,
-        case when ls.old_price is not null and ls.price is not null and ls.old_price > ls.price then 1 else 0 end as active_discounts,
+        case when ls.old_price is not null and coalesce(ls.price, cp.last_snapshot_price::numeric) is not null and ls.old_price > coalesce(ls.price, cp.last_snapshot_price::numeric) then 1 else 0 end as active_discounts,
         greatest(cp.last_change_at, cp.last_scraped_at, cp.created_at)::text as last_change,
         cp.created_at::text as discovered_at,
         coalesce(cp.last_scraped_at, cp.created_at)::text as updated_at,
         false as matched,
         false as duplicate_risk,
         coalesce(cp.last_scraped_at, cp.created_at) < now() - interval '24 hours' as stale,
-        ls.price is null as missing_price,
+        coalesce(ls.price, cp.last_snapshot_price::numeric) is null as missing_price,
         cp.gtin is not null as has_gtin,
         cp.sku is not null as has_sku,
         coalesce(rs.sparkline, '[]'::jsonb) as sparkline,
+        jsonb_build_array(jsonb_build_object(
+          'competitorProductId', cp.id::text,
+          'storeId', cp.store_id::text,
+          'storeName', st.name,
+          'title', coalesce(cp.title, cp.url),
+          'url', cp.url,
+          'imageUrl', cp.image_url,
+          'price', coalesce(ls.price, cp.last_snapshot_price::numeric),
+          'oldPrice', ls.old_price,
+          'currency', coalesce(ls.currency, cp.last_snapshot_currency, 'EUR'),
+          'availability', coalesce(ls.availability::text, cp.last_snapshot_availability),
+          'lastScrapedAt', coalesce(ls.scraped_at, cp.last_scraped_at)::text
+        )) as members,
         lower(concat_ws(' ', cp.title, cp.brand, cp.sku, cp.gtin, cp.url, st.name)) as search_text,
         lower(concat_ws(' ', cp.title, cp.brand)) as spec_text,
         array[cp.store_id::text] as competitor_ids,
-        null::text as category_id
+        null::text as category_id,
+        coalesce(
+          nullif(lower(cp.gtin), ''),
+          nullif(regexp_replace(lower(coalesce(cp.brand, '') || ' ' || coalesce(cp.title, '')), '[^a-z0-9]+', ' ', 'g'), ''),
+          'cp:' || cp.id::text
+        ) as cluster_key
       from competitor_products cp
       join stores st on st.id = cp.store_id
       left join latest_snapshot ls on ls.competitor_product_id = cp.id
@@ -576,8 +1042,12 @@ async function getProductCompetitors(
       cp.id::text as competitor_product_id,
       st.id::text as competitor_id,
       st.name as competitor_name,
+      st.domain as competitor_domain,
       coalesce(cp.title, cp.url) as title,
       cp.url,
+      cp.image_url,
+      cp.sku,
+      cp.gtin,
       coalesce(ls.price, cp.last_snapshot_price::numeric) as current_price,
       ls.old_price,
       coalesce(ls.currency, cp.last_snapshot_currency, 'EUR') as currency,
@@ -593,31 +1063,53 @@ async function getProductCompetitors(
     order by coalesce(ls.price, cp.last_snapshot_price::numeric) asc nulls last
   `);
 
-  return rows.map((row) => ({
-    competitorProductId: row.competitor_product_id,
-    competitorId: row.competitor_id,
-    competitorName: row.competitor_name,
-    title: row.title,
-    url: row.url,
-    currentPrice: numberOrNull(row.current_price),
-    oldPrice: numberOrNull(row.old_price),
-    currency: row.currency ?? 'EUR',
-    discountPct: discountPct(numberOrNull(row.current_price), numberOrNull(row.old_price)),
-    availability: row.availability,
-    shipping: row.shipping,
-    rating: numberOrNull(row.rating),
-    lastUpdate: row.last_update,
-    confidence: numberOrNull(row.confidence),
-    source: row.source,
-  }));
+  const prices = rows
+    .map((row) => numberOrNull(row.current_price))
+    .filter((value): value is number => value != null);
+  const minPrice = prices.length > 0 ? Math.min(...prices) : null;
+  const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
+
+  return rows.map((row) => {
+    const price = numberOrNull(row.current_price);
+    const pricePositionPct =
+      price != null && minPrice != null && maxPrice != null && maxPrice > minPrice
+        ? Number((((price - minPrice) / (maxPrice - minPrice)) * 100).toFixed(1))
+        : null;
+    return {
+      competitorProductId: row.competitor_product_id,
+      competitorId: row.competitor_id,
+      competitorName: row.competitor_name,
+      competitorDomain: row.competitor_domain,
+      title: row.title,
+      url: row.url,
+      currentPrice: price,
+      oldPrice: numberOrNull(row.old_price),
+      currency: row.currency ?? 'EUR',
+      discountPct: discountPct(price, numberOrNull(row.old_price)),
+      availability: row.availability,
+      shipping: row.shipping,
+      rating: numberOrNull(row.rating),
+      lastUpdate: row.last_update,
+      confidence: numberOrNull(row.confidence),
+      source: row.source,
+      sku: row.sku,
+      gtin: row.gtin,
+      imageUrl: row.image_url,
+      pricePositionPct,
+    };
+  });
 }
 
 interface ProductCompetitorComparisonRow extends Record<string, unknown> {
   competitor_product_id: string;
   competitor_id: string;
   competitor_name: string;
+  competitor_domain: string | null;
   title: string;
   url: string;
+  image_url: string | null;
+  sku: string | null;
+  gtin: string | null;
   current_price: string | null;
   old_price: string | null;
   currency: string | null;
@@ -742,7 +1234,125 @@ function mapEntityRow(row: EntityRow): ProductIntelligenceRow {
     stale: row.stale,
     missingPrice: row.missing_price,
     sparkline: parseSparkline(row.sparkline),
+    members: parseMembers(row.members),
+    clusterKey: row.cluster_key ?? `entity:${row.id}`,
   };
+}
+
+function parseMembers(value: unknown): ProductStoreMember[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const m = item as Record<string, unknown>;
+      const storeId = typeof m.storeId === 'string' ? m.storeId : null;
+      const competitorProductId = typeof m.competitorProductId === 'string' ? m.competitorProductId : null;
+      if (!storeId || !competitorProductId) return null;
+      return {
+        competitorProductId,
+        storeId,
+        storeName: typeof m.storeName === 'string' ? m.storeName : 'Unknown store',
+        title: typeof m.title === 'string' ? m.title : 'Untitled',
+        url: typeof m.url === 'string' ? m.url : '',
+        imageUrl: typeof m.imageUrl === 'string' ? m.imageUrl : null,
+        price: numberOrNull(m.price),
+        oldPrice: numberOrNull(m.oldPrice),
+        currency: typeof m.currency === 'string' ? m.currency : 'EUR',
+        availability: typeof m.availability === 'string' ? m.availability : null,
+        lastScrapedAt: typeof m.lastScrapedAt === 'string' ? m.lastScrapedAt : null,
+      } satisfies ProductStoreMember;
+    })
+    .filter((item): item is ProductStoreMember => item !== null);
+}
+
+function buildClusters(rows: ProductIntelligenceRow[]): ProductCluster[] {
+  const map = new Map<string, ProductIntelligenceRow[]>();
+  for (const row of rows) {
+    const key = row.clusterKey || `entity:${row.id}`;
+    const bucket = map.get(key) ?? [];
+    bucket.push(row);
+    map.set(key, bucket);
+  }
+  const clusters: ProductCluster[] = [];
+  for (const [key, group] of map.entries()) {
+    if (group.length === 0) continue;
+    const representative = pickRepresentative(group as [ProductIntelligenceRow, ...ProductIntelligenceRow[]]);
+    const allMembers = group.flatMap((row) => row.members);
+    const deduped = dedupeMembers(allMembers);
+    const prices = deduped.map((m) => m.price).filter((p): p is number => p != null);
+    const minPrice = prices.length > 0 ? Math.min(...prices) : null;
+    const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
+    const avgPrice = prices.length > 0 ? Number((prices.reduce((s, p) => s + p, 0) / prices.length).toFixed(2)) : null;
+    const cheapestMember = deduped
+      .filter((m) => m.price != null)
+      .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))[0];
+    const highestMember = deduped
+      .filter((m) => m.price != null)
+      .sort((a, b) => (b.price ?? 0) - (a.price ?? 0))[0];
+    const savingsPct = minPrice != null && maxPrice != null && maxPrice > 0 && maxPrice !== minPrice
+      ? Number((((maxPrice - minPrice) / maxPrice) * 100).toFixed(1))
+      : null;
+    const inStockStores = deduped.filter((m) => m.availability === 'in_stock').length;
+    const outOfStockStores = deduped.filter((m) => m.availability === 'out_of_stock').length;
+    const uniqueStores = new Set(deduped.map((m) => m.storeId)).size;
+    const lastChange = group
+      .map((row) => row.lastChange)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .reverse()[0] ?? null;
+    clusters.push({
+      key,
+      representative,
+      rows: group,
+      members: deduped,
+      storeCount: uniqueStores,
+      minPrice,
+      avgPrice,
+      maxPrice,
+      cheapestStoreName: cheapestMember?.storeName ?? null,
+      highestStoreName: highestMember?.storeName ?? null,
+      savingsPct,
+      currency: deduped[0]?.currency ?? representative.currency,
+      inStockStores,
+      outOfStockStores,
+      lastChange,
+    });
+  }
+  return clusters.sort((a, b) => {
+    if (b.storeCount !== a.storeCount) return b.storeCount - a.storeCount;
+    return a.representative.canonicalTitle.localeCompare(b.representative.canonicalTitle);
+  });
+}
+
+function pickRepresentative(rows: [ProductIntelligenceRow, ...ProductIntelligenceRow[]]): ProductIntelligenceRow {
+  const normalized = rows.find((row) => row.entityType === 'normalized');
+  if (normalized) return normalized;
+  const sorted = rows
+    .slice()
+    .sort((a, b) => b.competitorsCount - a.competitorsCount || (b.confidence - a.confidence));
+  return sorted[0] ?? rows[0];
+}
+
+function dedupeMembers(members: ProductStoreMember[]): ProductStoreMember[] {
+  const map = new Map<string, ProductStoreMember>();
+  for (const member of members) {
+    const existing = map.get(member.competitorProductId);
+    if (!existing) {
+      map.set(member.competitorProductId, member);
+      continue;
+    }
+    const existingFreshness = existing.lastScrapedAt ?? '';
+    const incomingFreshness = member.lastScrapedAt ?? '';
+    if (incomingFreshness > existingFreshness) {
+      map.set(member.competitorProductId, member);
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.price == null && b.price == null) return a.storeName.localeCompare(b.storeName);
+    if (a.price == null) return 1;
+    if (b.price == null) return -1;
+    return a.price - b.price;
+  });
 }
 
 function buildGroups(rows: ProductIntelligenceRow[], groupBy: string): ProductGroupSummary[] {

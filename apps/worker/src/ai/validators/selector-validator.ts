@@ -39,7 +39,7 @@ function validateCssSelector(selector: string): string | undefined {
 
 function textSample($: cheerio.CheerioAPI, selector: string): string | undefined {
   const el = $(selector).first();
-  const attr = el.attr('src') ?? el.attr('href');
+  const attr = el.attr('src') ?? el.attr('data-src') ?? el.attr('content') ?? el.attr('href');
   const text = el.text().replace(/\s+/g, ' ').trim();
   return (text || attr || undefined)?.slice(0, 300);
 }
@@ -53,6 +53,9 @@ export function validateProductSelectors(html: string, suggestion: SelectorSugge
     oldPriceSelector: suggestion.oldPriceSelector,
     availabilitySelector: suggestion.availabilitySelector,
     imageSelector: suggestion.imageSelector,
+    brandSelector: suggestion.brandSelector,
+    skuSelector: suggestion.skuSelector,
+    breadcrumbsSelector: suggestion.breadcrumbsSelector,
     shippingSelector: suggestion.shippingSelector,
     ratingSelector: suggestion.ratingSelector,
   };
@@ -82,7 +85,9 @@ export function validateProductSelectors(html: string, suggestion: SelectorSugge
   const priceText = suggestion.priceSelector ? textSample($, suggestion.priceSelector) : undefined;
   const price = parsePrice(priceText);
   const image = suggestion.imageSelector
-    ? ($(suggestion.imageSelector).first().attr('src') ?? $(suggestion.imageSelector).first().attr('data-src'))
+    ? ($(suggestion.imageSelector).first().attr('src') ??
+      $(suggestion.imageSelector).first().attr('data-src') ??
+      $(suggestion.imageSelector).first().attr('content'))
     : undefined;
   if (suggestion.priceSelector && price == null) {
     fields.priceSelector = {
@@ -126,4 +131,3 @@ export function validateCategorySelectors(html: string, suggestion: CategorySugg
   const ok = cardCount >= 2 && Object.values(fields).every((field) => field.valid);
   return { ok, confidence: ok ? suggestion.confidence : Math.min(suggestion.confidence, 0.5), fields, extracted: {} };
 }
-

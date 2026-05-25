@@ -61,6 +61,18 @@ export const scrapingRules = pgTable(
     oldPriceSelector: text('old_price_selector'),
     availabilitySelector: text('availability_selector'),
     imageSelector: text('image_selector'),
+    brandSelector: text('brand_selector'),
+    skuSelector: text('sku_selector'),
+    breadcrumbsSelector: text('breadcrumbs_selector'),
+    productCardSelector: text('product_card_selector'),
+    cardTitleSelector: text('card_title_selector'),
+    cardPriceSelector: text('card_price_selector'),
+    cardOldPriceSelector: text('card_old_price_selector'),
+    cardImageSelector: text('card_image_selector'),
+    cardLinkSelector: text('card_link_selector'),
+    cardAvailabilitySelector: text('card_availability_selector'),
+    paginationNextSelector: text('pagination_next_selector'),
+    loadMoreSelector: text('load_more_selector'),
     shippingSelector: text('shipping_selector'),
     ratingSelector: text('rating_selector'),
     priceRegex: text('price_regex'),
@@ -74,6 +86,30 @@ export const scrapingRules = pgTable(
   }),
 );
 
+export const competitorProfiles = pgTable(
+  'competitor_profiles',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    framework: text('framework'),
+    renderingStrategy: text('rendering_strategy'),
+    scrapeDifficulty: text('scrape_difficulty'),
+    antiBotRisk: text('anti_bot_risk'),
+    recommendedMode: text('recommended_mode'),
+    detectionConfidence: numeric('detection_confidence', { precision: 5, scale: 4 }),
+    autoDetectedSettingsJson: jsonb('auto_detected_settings_json'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    storeUnique: uniqueIndex('competitor_profiles_store_unique').on(t.storeId),
+    frameworkIdx: index('competitor_profiles_framework_idx').on(t.framework),
+  }),
+);
+
 export type Store = typeof stores.$inferSelect;
 export type StoreInsert = typeof stores.$inferInsert;
 export type ScrapingRules = typeof scrapingRules.$inferSelect;
+export type CompetitorProfile = typeof competitorProfiles.$inferSelect;

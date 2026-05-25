@@ -39,11 +39,11 @@ export function productFilter(filters: DashboardFilters): SQL {
 }
 
 export function rangeFilter(column: SQL, filters: DashboardFilters): SQL {
-  return sql`${column} >= ${filters.dateFrom}`;
+  return sql`${column} >= ${filters.dateFrom}::timestamptz`;
 }
 
 export function previousRangeFilter(column: SQL, filters: DashboardFilters): SQL {
-  return sql`${column} >= ${filters.previousDateFrom} and ${column} < ${filters.previousDateTo}`;
+  return sql`${column} >= ${filters.previousDateFrom}::timestamptz and ${column} < ${filters.previousDateTo}::timestamptz`;
 }
 
 export function bucketExpression(filters: DashboardFilters): SQL {

@@ -55,7 +55,20 @@
       "Bash(sed -i 's/Cheerio<Element>/Cheerio<Node>/g; s/import type { Element } from .domhandler.;/import type { AnyNode } from \"domhandler\";\\\\ntype Node = AnyNode;/' apps/worker/src/discovery/product-card-detector.ts)",
       "Bash(node debug-detector.mjs)",
       "Bash(node debug-tilda.mjs)",
-      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Discovery: Playwright fallback for SPA-shell pages \\(Tilda, Shopify, …\\) *)"
+      "Bash(git -c 'user.name=Competitor Radar' -c user.email=noreply@example.com commit -m 'Discovery: Playwright fallback for SPA-shell pages \\(Tilda, Shopify, …\\) *)",
+      "Bash(tasklist)",
+      "Bash(findstr /i \"chrome chromium playwright\")",
+      "Bash(findstr /i \"chrome\")",
+      "PowerShell(Get-Process | Where-Object { $_.ProcessName -match 'chrome|chromium|playwright|node' } | Select-Object ProcessName, Id, StartTime | Sort-Object StartTime -Descending | Select-Object -First 20)",
+      "Bash(npx --prefix apps/worker playwright --version)",
+      "Bash(npm ls *)",
+      "PowerShell([System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Write-Output \"TMPDIR: $env:TEMP\"; Write-Output \"USERPROFILE: $env:USERPROFILE\"; Test-Path \"$env:TEMP\")",
+      "PowerShell(node -e \"console.log\\(require\\('os'\\).tmpdir\\(\\)\\)\")",
+      "Bash(npx tsc *)",
+      "Bash(npx vitest *)",
+      "Bash(cd /d/Apps/XXL && find . -name \"*.ts\" -newer \"/d/Apps/XXL/apps/web/src/lib/utils.ts\" -not -path \"*/node_modules/*\" 2>/dev/null | head -10; echo \"---\"; pwd)",
+      "Bash(ls \"C:/Users/Артур/.claude/projects/D--Apps-XXL/memory\" 2>&1 | head -5)",
+      "Bash(powershell -Command \"Get-ChildItem -Force 'C:\\\\Users\\\\Артур\\\\.claude\\\\projects\\\\D--Apps-XXL\\\\memory' -ErrorAction SilentlyContinue | Format-Table Name\")"
     ]
   }
 }

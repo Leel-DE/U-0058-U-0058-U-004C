@@ -179,7 +179,8 @@ async function pauseForManual(run: DiscoveryRunState, item: QueueItem, reason: s
   const existingId = run.domainSessions.get(domain);
   if (existingId) {
     const existing = sessionStatus(existingId);
-    if (existing && existing.status !== 'cancelled' && existing.status !== 'expired' && !existing.closedAt) {
+    const deadStatuses = new Set(['cancelled', 'expired', 'failed']);
+    if (existing && !deadStatuses.has(existing.status) && !existing.closedAt) {
       run.manualSessionId = existingId;
       run.manualQueueItem = item;
       run.status = 'manual_action_required';
@@ -197,18 +198,49 @@ async function pauseForManual(run: DiscoveryRunState, item: QueueItem, reason: s
   }
 
   const session = await startManualSession(item.url, run.options.userAgent, 90_000);
-  if (session?.id) {
-    run.domainSessions.set(domain, session.id);
-    // Tell the session manager how much work is waiting on this domain.
-    const pending = run.queue.filter((q) => domainOf(q.url) === domain).length + 1;
-    recordActivity(session.id, { pendingUrlsCount: pending });
+
+  // If the headed browser failed to launch (Playwright threw inside `start()`),
+  // the session view still has an id but status === 'failed'. Don't park the
+  // run in `manual_action_required` — that just hangs the UI with a "browser
+  // is open" message while no browser actually exists. Surface the real error.
+  if (!session || session.status === 'failed' || session.closedAt) {
+    // The session log has multiple lines; the actual Playwright error is on
+    // the `start_failed:` line (the next two — "closing browser…" and "browser
+    // closed (failed)." — are added by gracefulClose after the catch). Pick
+    // the start_failed line specifically and fall back to whatever we have.
+    const logs = session?.logs ?? [];
+    const failureLine =
+      logs.find((line) => line.includes('start_failed:')) ??
+      logs.find((line) => line.includes('_failed:')) ??
+      logs.slice(-1)[0] ??
+      'no diagnostic line in session log';
+    recordPage(run, item, {
+      status: 'error',
+      error: `manual browser failed to open: ${failureLine}`,
+      pageType: 'captcha',
+      crawledAt: new Date().toISOString(),
+    });
+    log(run, 'error', 'Manual browser failed to open — cannot pause for captcha', {
+      url: item.url,
+      sessionId: session?.id,
+      sessionStatus: session?.status,
+      reason,
+      detail: failureLine,
+      allSessionLogs: logs,
+    });
+    return false;
   }
-  run.manualSessionId = session?.id;
+
+  run.domainSessions.set(domain, session.id);
+  const pending = run.queue.filter((q) => domainOf(q.url) === domain).length + 1;
+  recordActivity(session.id, { pendingUrlsCount: pending });
+  run.manualSessionId = session.id;
   run.manualQueueItem = item;
   run.status = 'manual_action_required';
   log(run, 'warn', 'Manual action required. Complete the challenge in the browser, then resume discovery.', {
     url: item.url,
-    sessionId: session?.id,
+    sessionId: session.id,
+    sessionStatus: session.status,
     reason,
   });
   return true;

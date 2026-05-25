@@ -6,9 +6,9 @@ export interface DashboardFilters {
   categoryId?: string;
   activeOnly: boolean;
   failedOnly: boolean;
-  dateFrom: Date;
-  previousDateFrom: Date;
-  previousDateTo: Date;
+  dateFrom: string;
+  previousDateFrom: string;
+  previousDateTo: string;
 }
 
 export interface DashboardKpi {

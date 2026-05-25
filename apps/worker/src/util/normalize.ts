@@ -1,11 +1,13 @@
 import type { Availability } from '../types.js';
 
-const PRICE_REGEX_DEFAULT = /(\d{1,3}(?:[\s.,]\d{3})*(?:[.,]\d{1,4})?)/;
+const PRICE_REGEX_DEFAULT =
+  /(\d{1,3}(?:[.\s]\d{3})+(?:[.,]\d{1,4})?|\d{1,3}(?:,\d{3})+(?:\.\d{1,4})?|\d{1,6}(?:[.,]\d{1,4})?)/;
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   '€': 'EUR',
   '$': 'USD',
   '£': 'GBP',
+  '₴': 'UAH',
 };
 
 /** Parse a raw price text such as "€1.299,00" or "$1,299.99" into a number. */
@@ -35,7 +37,8 @@ export function detectCurrency(raw: string | null | undefined): string | undefin
   for (const [sym, code] of Object.entries(CURRENCY_SYMBOLS)) {
     if (raw.includes(sym)) return code;
   }
-  const m = raw.match(/\b(EUR|USD|GBP|PLN|CZK|SEK|NOK|DKK|CHF)\b/i);
+  if (/грн\.?/i.test(raw)) return 'UAH';
+  const m = raw.match(/\b(EUR|USD|GBP|UAH|PLN|CZK|SEK|NOK|DKK|CHF)\b/i);
   return m?.[1]?.toUpperCase();
 }
 

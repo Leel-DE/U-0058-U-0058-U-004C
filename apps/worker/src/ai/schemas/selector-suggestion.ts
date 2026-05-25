@@ -8,6 +8,9 @@ export const selectorSuggestionSchema = z.object({
   oldPriceSelector: selector,
   availabilitySelector: selector,
   imageSelector: selector,
+  brandSelector: selector,
+  skuSelector: selector,
+  breadcrumbsSelector: selector,
   shippingSelector: selector,
   ratingSelector: selector,
   currency: z.string().trim().length(3).optional(),
@@ -16,4 +19,3 @@ export const selectorSuggestionSchema = z.object({
 });
 
 export type SelectorSuggestion = z.infer<typeof selectorSuggestionSchema>;
-
