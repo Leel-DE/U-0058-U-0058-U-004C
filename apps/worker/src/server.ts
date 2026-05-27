@@ -51,6 +51,8 @@ import {
   startDiscoveryRun,
 } from './discovery/discovery-runner.js';
 import { analyzeStore } from './discovery/store-analyzer.js';
+import { runProductSelectorRepair } from './repair/selector-repair-runner.js';
+import { selectorRepairRequestSchema } from './repair/selector-repair-types.js';
 
 const logger = pino({ name: 'cr-worker', level: process.env.LOG_LEVEL ?? 'info' });
 const PORT = Number(process.env.PORT ?? 4000);
@@ -67,7 +69,9 @@ const scrapeReqSchema = z.object({
     oldPriceSelector: z.string().nullable().optional(),
     availabilitySelector: z.string().nullable().optional(),
     imageSelector: z.string().nullable().optional(),
+    brandSelector: z.string().nullable().optional(),
     skuSelector: z.string().nullable().optional(),
+    breadcrumbsSelector: z.string().nullable().optional(),
     categorySelector: z.string().nullable().optional(),
     shippingSelector: z.string().nullable().optional(),
     ratingSelector: z.string().nullable().optional(),
@@ -562,6 +566,51 @@ app.post('/scrape/preview', async (req, reply) => {
     headers: { authorization: req.headers.authorization as string, 'content-type': 'application/json' },
     payload: body,
   }).then(async (res) => JSON.parse(res.body));
+});
+
+app.post('/selectors/repair', async (req, reply) => {
+  const parse = selectorRepairRequestSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return {
+      ok: false,
+      status: 'skipped',
+      confidence: 0,
+      warnings: [],
+      error: 'invalid_payload: ' + JSON.stringify(parse.error.flatten().fieldErrors),
+      autoApplyRecommended: false,
+    };
+  }
+
+  const startedAt = Date.now();
+  try {
+    const result = await runProductSelectorRepair(parse.data, getAIProvider());
+    logStructured({
+      service: 'worker',
+      level: result.ok ? 'info' : result.status === 'skipped' ? 'warn' : 'error',
+      category: 'selector_repair',
+      event: result.status === 'failed' ? 'selector_repair_validation_failed' : 'selector_repair_ai_suggested',
+      durationMs: Date.now() - startedAt,
+      metadata: {
+        url: parse.data.url,
+        status: result.status,
+        confidence: result.confidence,
+        autoApplyRecommended: result.autoApplyRecommended,
+        error: result.error,
+      },
+    });
+    return result;
+  } catch (err) {
+    logger.warn({ err: (err as Error).message, url: parse.data.url }, 'selector_repair_failed');
+    return {
+      ok: false,
+      status: 'failed',
+      confidence: 0,
+      warnings: [],
+      error: (err as Error).message,
+      autoApplyRecommended: false,
+    };
+  }
 });
 
 app.post('/scrape/auto-detect', async (req, reply) => {

@@ -22,6 +22,7 @@ const REQUIRED_TABLES = [
   'site_discovery_products',
   'selector_versions',
   'extraction_debug_artifacts',
+  'selector_repair_attempts',
   'crawl_domain_health',
   'service_heartbeats',
   'schema_migration_log',
@@ -34,6 +35,7 @@ const REQUIRED_INDEXES = [
   'site_discovery_products_run_url_unique',
   'selector_versions_store_type_version_unique',
   'extraction_debug_artifacts_org_created_idx',
+  'selector_repair_attempts_product_idx',
   'crawl_domain_health_org_domain_unique',
   'service_heartbeats_service_instance_unique',
 ];
@@ -50,6 +52,7 @@ const REQUIRED_RLS_TABLES = [
   'notifications',
   'selector_versions',
   'extraction_debug_artifacts',
+  'selector_repair_attempts',
   'crawl_domain_health',
 ];
 const REQUIRED_POLICIES = [
@@ -63,6 +66,7 @@ const REQUIRED_POLICIES = [
   'notifications_user_select',
   'selector_versions_select',
   'extraction_debug_artifacts_select',
+  'selector_repair_attempts_select',
   'crawl_domain_health_select',
 ];
 const REQUIRED_BUCKETS = ['exports', 'raw-html', 'screenshots', 'html', 'debug'];
@@ -137,6 +141,7 @@ async function main() {
         'stores.trg_updated_at',
         'my_products.trg_updated_at',
         'scraping_rules.trg_updated_at',
+        'selector_repair_attempts.trg_updated_at',
       ]),
     );
 

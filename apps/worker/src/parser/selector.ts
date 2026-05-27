@@ -22,6 +22,8 @@ export function parseSelectors($: CheerioAPI, rules: ScrapingRules): Extracted |
   const oldPriceText = get(rules.oldPriceSelector);
   const availabilityText = get(rules.availabilitySelector);
   const image = getAttr(rules.imageSelector, 'src') ?? getAttr(rules.imageSelector, 'data-src') ?? getAttr(rules.imageSelector, 'content');
+  const sku = get(rules.skuSelector);
+  const category = get(rules.breadcrumbsSelector);
   const shipping = get(rules.shippingSelector);
   const ratingText = get(rules.ratingSelector);
 
@@ -38,6 +40,8 @@ export function parseSelectors($: CheerioAPI, rules: ScrapingRules): Extracted |
     oldPrice,
     currency,
     image,
+    sku,
+    category,
     shipping,
     availability,
     rating: Number.isFinite(rating) ? rating : undefined,

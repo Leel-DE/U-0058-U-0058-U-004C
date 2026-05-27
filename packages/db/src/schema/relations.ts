@@ -18,6 +18,7 @@ import { productMatches } from './matches';
 import { alertRules, notifications } from './alerts';
 import { exports_, auditLogs } from './exports-audit';
 import { aiExtractionSuggestions, manualScrapingSessions } from './ai';
+import { extractionDebugArtifacts, selectorRepairAttempts } from './operations';
 import {
   siteDiscoveryCategories,
   siteDiscoveryLogs,
@@ -70,6 +71,27 @@ export const aiExtractionSuggestionsRelations = relations(aiExtractionSuggestion
     references: [organizations.id],
   }),
   store: one(stores, { fields: [aiExtractionSuggestions.competitorId], references: [stores.id] }),
+}));
+
+export const selectorRepairAttemptsRelations = relations(selectorRepairAttempts, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [selectorRepairAttempts.orgId],
+    references: [organizations.id],
+  }),
+  store: one(stores, { fields: [selectorRepairAttempts.competitorId], references: [stores.id] }),
+  product: one(competitorProducts, {
+    fields: [selectorRepairAttempts.productId],
+    references: [competitorProducts.id],
+  }),
+  rules: one(scrapingRules, {
+    fields: [selectorRepairAttempts.scrapingRuleId],
+    references: [scrapingRules.id],
+  }),
+  artifact: one(extractionDebugArtifacts, {
+    fields: [selectorRepairAttempts.debugArtifactId],
+    references: [extractionDebugArtifacts.id],
+  }),
+  run: one(scrapeRuns, { fields: [selectorRepairAttempts.scrapeRunId], references: [scrapeRuns.id] }),
 }));
 
 export const manualScrapingSessionsRelations = relations(manualScrapingSessions, ({ one }) => ({

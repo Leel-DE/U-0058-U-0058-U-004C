@@ -1,6 +1,7 @@
 -- RLS for hardening/debug tables. Drizzle owns the table shape; raw SQL owns access control.
 alter table public.selector_versions enable row level security;
 alter table public.extraction_debug_artifacts enable row level security;
+alter table public.selector_repair_attempts enable row level security;
 alter table public.crawl_domain_health enable row level security;
 
 drop policy if exists selector_versions_select on public.selector_versions;
@@ -39,6 +40,15 @@ create policy extraction_debug_artifacts_select on public.extraction_debug_artif
 
 drop policy if exists extraction_debug_artifacts_write on public.extraction_debug_artifacts;
 create policy extraction_debug_artifacts_write on public.extraction_debug_artifacts for all
+  using (public.has_org_role(organization_id, array['owner','manager']::org_role[]))
+  with check (public.has_org_role(organization_id, array['owner','manager']::org_role[]));
+
+drop policy if exists selector_repair_attempts_select on public.selector_repair_attempts;
+create policy selector_repair_attempts_select on public.selector_repair_attempts for select
+  using (public.is_org_member(organization_id));
+
+drop policy if exists selector_repair_attempts_write on public.selector_repair_attempts;
+create policy selector_repair_attempts_write on public.selector_repair_attempts for all
   using (public.has_org_role(organization_id, array['owner','manager']::org_role[]))
   with check (public.has_org_role(organization_id, array['owner','manager']::org_role[]));
 

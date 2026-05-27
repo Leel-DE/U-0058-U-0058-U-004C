@@ -4,7 +4,11 @@ import { productSelectorPrompt } from '../prompts/detect-product-page.js';
 import { selectorValidationPrompt } from '../prompts/validate-selectors.js';
 import { categorySuggestionSchema, type CategorySuggestion } from '../schemas/category-suggestion.js';
 import { selectorSuggestionSchema, type SelectorSuggestion } from '../schemas/selector-suggestion.js';
-import type { AIProvider, DetectInput, ValidateInput, ValidationResult } from './index.js';
+import {
+  selectorRepairSuggestionSchema,
+  type SelectorRepairSuggestion,
+} from '../../repair/selector-repair-types.js';
+import type { AIProvider, DetectInput, RepairProductSelectorsInput, ValidateInput, ValidationResult } from './index.js';
 
 const validationSchema = {
   type: 'object',
@@ -54,6 +58,29 @@ const categorySchema = {
   required: ['confidence'],
 };
 
+const repairProductSchema = {
+  type: 'object',
+  properties: {
+    selectors: {
+      type: 'object',
+      properties: {
+        titleSelector: { type: 'string', nullable: true },
+        priceSelector: { type: 'string', nullable: true },
+        oldPriceSelector: { type: 'string', nullable: true },
+        availabilitySelector: { type: 'string', nullable: true },
+        imageSelector: { type: 'string', nullable: true },
+        brandSelector: { type: 'string', nullable: true },
+        skuSelector: { type: 'string', nullable: true },
+        breadcrumbsSelector: { type: 'string', nullable: true },
+      },
+    },
+    confidence: { type: 'number' },
+    reason: { type: 'string' },
+    warnings: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['selectors', 'confidence', 'reason', 'warnings'],
+};
+
 export class GeminiProvider implements AIProvider {
   private readonly client: GoogleGenAI;
   private readonly model = process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
@@ -85,6 +112,11 @@ export class GeminiProvider implements AIProvider {
       confidence: Number(json.confidence ?? 0),
       problems: Array.isArray(json.problems) ? json.problems.map(String) : [],
     };
+  }
+
+  async repairProductSelectors(input: RepairProductSelectorsInput): Promise<SelectorRepairSuggestion> {
+    const json = await this.generateJson(input.prompt, repairProductSchema);
+    return selectorRepairSuggestionSchema.parse(json);
   }
 
   private async generateJson(prompt: string, responseSchema: object): Promise<Record<string, unknown>> {

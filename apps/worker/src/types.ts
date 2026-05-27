@@ -4,7 +4,9 @@ export interface ScrapingRules {
   oldPriceSelector?: string | null;
   availabilitySelector?: string | null;
   imageSelector?: string | null;
+  brandSelector?: string | null;
   skuSelector?: string | null;
+  breadcrumbsSelector?: string | null;
   categorySelector?: string | null;
   shippingSelector?: string | null;
   ratingSelector?: string | null;

@@ -1,5 +1,6 @@
 import { desc, eq } from 'drizzle-orm';
 import { History } from 'lucide-react';
+import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,9 +26,14 @@ export default async function DebugSelectorsPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Selector history</h1>
-        <p className="text-sm text-muted-foreground">Versioned selector changes with rollback.</p>
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Selector history</h1>
+          <p className="text-sm text-muted-foreground">Versioned selector changes with rollback.</p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/debug/selectors/repairs">Repair attempts</Link>
+        </Button>
       </header>
 
       <Card>

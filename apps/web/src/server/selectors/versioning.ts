@@ -43,6 +43,7 @@ export async function recordSelectorVersions(args: {
   changedBy?: string | null;
   validation?: unknown;
   confidence?: number | null;
+  previousSelectors?: RulesLike;
 }) {
   const entries = selectorEntries(args.selectors);
   if (entries.length === 0) return;
@@ -62,7 +63,7 @@ export async function recordSelectorVersions(args: {
         version: (latest?.version ?? 0) + 1,
         selectorType: entry.field,
         selectorValue: entry.value,
-        previousSelectorValue: latest?.selector_value ?? null,
+        previousSelectorValue: latest?.selector_value ?? args.previousSelectors?.[entry.field] ?? null,
         source: args.source,
         confidence: args.confidence == null ? null : String(args.confidence),
         validationJson: args.validation ?? null,

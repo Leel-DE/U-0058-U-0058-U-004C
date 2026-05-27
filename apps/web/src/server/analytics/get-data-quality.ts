@@ -136,7 +136,7 @@ export async function getDataQuality(orgId: string, filters: AnalyticsFilters): 
       `),
       db().execute<CountRow>(sql`
         select count(*)::int as count
-        from ai_extraction_suggestions
+        from selector_repair_attempts
         where organization_id = ${orgId}
           and (${fromValue}::timestamptz is null or created_at >= ${fromValue}::timestamptz)
       `),

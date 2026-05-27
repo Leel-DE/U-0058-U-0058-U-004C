@@ -14,7 +14,7 @@ import { organizations } from './organizations';
 import { profiles } from './profiles';
 import { competitorProducts } from './products';
 import { scrapeRuns } from './snapshots';
-import { stores } from './stores';
+import { scrapingRules, stores } from './stores';
 
 export const selectorVersions = pgTable(
   'selector_versions',
@@ -86,6 +86,42 @@ export const extractionDebugArtifacts = pgTable(
   }),
 );
 
+export const selectorRepairAttempts = pgTable(
+  'selector_repair_attempts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    orgId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    competitorId: uuid('competitor_id').references(() => stores.id, { onDelete: 'cascade' }),
+    productId: uuid('product_id').references(() => competitorProducts.id, { onDelete: 'cascade' }),
+    scrapeRunId: uuid('scrape_run_id').references(() => scrapeRuns.id, { onDelete: 'set null' }),
+    scrapingRuleId: uuid('scraping_rule_id').references(() => scrapingRules.id, { onDelete: 'set null' }),
+    debugArtifactId: uuid('debug_artifact_id').references(() => extractionDebugArtifacts.id, { onDelete: 'set null' }),
+    status: text('status').default('pending').notNull(),
+    triggerReason: text('trigger_reason').notNull(),
+    oldSelectorsJson: jsonb('old_selectors_json').default({}).notNull(),
+    suggestedSelectorsJson: jsonb('suggested_selectors_json'),
+    validationResultJson: jsonb('validation_result_json'),
+    appliedSelectorsJson: jsonb('applied_selectors_json'),
+    retryResultJson: jsonb('retry_result_json'),
+    aiProvider: text('ai_provider'),
+    aiModel: text('ai_model'),
+    confidence: numeric('confidence', { precision: 4, scale: 3 }),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    appliedAt: timestamp('applied_at', { withTimezone: true }),
+  },
+  (t) => ({
+    orgIdx: index('selector_repair_attempts_org_idx').on(t.orgId),
+    competitorIdx: index('selector_repair_attempts_competitor_idx').on(t.competitorId),
+    productIdx: index('selector_repair_attempts_product_idx').on(t.productId),
+    statusIdx: index('selector_repair_attempts_status_idx').on(t.status),
+    createdIdx: index('selector_repair_attempts_created_idx').on(t.createdAt),
+  }),
+);
+
 export const crawlDomainHealth = pgTable(
   'crawl_domain_health',
   {
@@ -131,5 +167,6 @@ export const serviceHeartbeats = pgTable(
 
 export type SelectorVersion = typeof selectorVersions.$inferSelect;
 export type ExtractionDebugArtifact = typeof extractionDebugArtifacts.$inferSelect;
+export type SelectorRepairAttempt = typeof selectorRepairAttempts.$inferSelect;
 export type CrawlDomainHealth = typeof crawlDomainHealth.$inferSelect;
 export type ServiceHeartbeat = typeof serviceHeartbeats.$inferSelect;

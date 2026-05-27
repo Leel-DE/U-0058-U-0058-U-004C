@@ -79,7 +79,7 @@ do $$
 declare t text;
 begin
   for t in select unnest(array[
-    'organizations','stores','my_products','scraping_rules'
+    'organizations','stores','my_products','scraping_rules','selector_repair_attempts'
   ]) loop
     execute format(
       'drop trigger if exists trg_updated_at on %I;

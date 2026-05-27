@@ -202,6 +202,12 @@ describe('base selector detection', () => {
         notes: [],
       })),
       validateSelectors: vi.fn(async () => ({ valid: true, confidence: 1, problems: [] })),
+      repairProductSelectors: vi.fn(async () => ({
+        selectors: {},
+        confidence: 0,
+        reason: 'not used',
+        warnings: [],
+      })),
     };
 
     const result = await detectBaseSelectorsFromPages({

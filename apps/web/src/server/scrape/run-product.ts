@@ -11,12 +11,17 @@ import { serverEnv } from '@/lib/env';
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server';
 import { evaluateAlertsForSnapshot } from '@/server/alerts/evaluate';
 import { DEFAULT_SCRAPE_RETRY_POLICY, withRetryBudget, type RetryAttempt } from '@/server/reliability/retry';
+import {
+  createSelectorRepairAttempt,
+  recordSelectorRepairRetryResult,
+} from '@/server/selectors/create-selector-repair-attempt';
 
 interface RunInput {
   orgId: string;
   competitorProductId: string;
   runId?: string;
   strategy?: 'cheerio' | 'playwright' | 'auto';
+  skipSelectorRepair?: boolean;
 }
 
 interface RunOutput {
@@ -38,7 +43,7 @@ async function recordExtractionArtifact(args: {
   rules: Record<string, unknown>;
   response: ScrapeResponse;
   retryAttempts: RetryAttempt[];
-}) {
+}): Promise<string> {
   const storage = createSupabaseServiceRoleClient();
   const artifactId = randomUUID();
   const htmlSnapshot = args.response.raw?.htmlSnippet ?? null;
@@ -94,6 +99,7 @@ async function recordExtractionArtifact(args: {
     })),
     replayable: Boolean(args.response.raw?.htmlSnippet),
   });
+  return artifactId;
 }
 
 async function updateCrawlDomainHealth(args: {
@@ -203,6 +209,9 @@ export async function runScrapeForProduct(input: RunInput): Promise<RunOutput> {
       oldPriceSelector: rules?.oldPriceSelector ?? null,
       availabilitySelector: rules?.availabilitySelector ?? null,
       imageSelector: rules?.imageSelector ?? null,
+      brandSelector: rules?.brandSelector ?? null,
+      skuSelector: rules?.skuSelector ?? null,
+      breadcrumbsSelector: rules?.breadcrumbsSelector ?? null,
       shippingSelector: rules?.shippingSelector ?? null,
       ratingSelector: rules?.ratingSelector ?? null,
       priceRegex: rules?.priceRegex ?? null,
@@ -269,6 +278,10 @@ export async function runScrapeForProduct(input: RunInput): Promise<RunOutput> {
   }
 
   if (!response.ok) {
+    const selectorFailureCount =
+      response.errorCode === 'parse_failed'
+        ? (product.selectorFailureCount ?? 0) + 1
+        : product.selectorFailureCount;
     await db().insert(schema.priceSnapshots).values({
       orgId: input.orgId,
       competitorProductId: product.id,
@@ -286,20 +299,20 @@ export async function runScrapeForProduct(input: RunInput): Promise<RunOutput> {
       .update(schema.competitorProducts)
       .set({
         lastScrapedAt: fetchedAt,
-        selectorFailureCount:
-          response.errorCode === 'parse_failed'
-            ? (product.selectorFailureCount ?? 0) + 1
-            : product.selectorFailureCount,
+        selectorFailureCount,
       })
       .where(eq(schema.competitorProducts.id, product.id));
-    await recordExtractionArtifact({
+    const debugArtifactId = await recordExtractionArtifact({
       input,
       storeId: store.id,
       url: product.url,
       rules: body.rules,
       response,
       retryAttempts,
-    }).catch((err) => console.error('[extraction_debug_artifacts] insert failed', err));
+    }).catch((err) => {
+      console.error('[extraction_debug_artifacts] insert failed', err);
+      return null;
+    });
     await updateCrawlDomainHealth({
       orgId: input.orgId,
       domain: store.domain,
@@ -316,6 +329,99 @@ export async function runScrapeForProduct(input: RunInput): Promise<RunOutput> {
       durationMs: response.meta.durationMs,
       metadata: { errorCode: response.errorCode, retryCount: retryAttempts.length },
     });
+
+    if (response.errorCode === 'parse_failed' && !input.skipSelectorRepair) {
+      if (!debugArtifactId) {
+        logStructured({
+          service: 'web',
+          level: 'warn',
+          category: 'selector_repair',
+          scrapeJobId: input.runId,
+          competitorId: store.id,
+          productId: product.id,
+          event: 'selector_repair_skipped',
+          metadata: { reason: 'html_artifact_missing' },
+        });
+      } else {
+        logStructured({
+          service: 'web',
+          level: 'info',
+          category: 'selector_repair',
+          scrapeJobId: input.runId,
+          competitorId: store.id,
+          productId: product.id,
+          event: 'selector_repair_started',
+          metadata: { debugArtifactId, selectorFailureCount },
+        });
+        const repair = await createSelectorRepairAttempt({
+          orgId: input.orgId,
+          competitorProductId: product.id,
+          storeId: store.id,
+          scrapeRunId: input.runId ?? null,
+          debugArtifactId,
+          triggerReason: 'parse_failed',
+          status: response.errorCode,
+          selectorFailureCount,
+          confidence: 0,
+        }).catch((err) => {
+          logStructured({
+            service: 'web',
+            level: 'error',
+            category: 'selector_repair',
+            scrapeJobId: input.runId,
+            competitorId: store.id,
+            productId: product.id,
+            event: 'selector_repair_validation_failed',
+            error: errorToLog(err),
+          });
+          return null;
+        });
+
+        if (repair?.applied && repair.attemptId) {
+          logStructured({
+            service: 'web',
+            level: 'info',
+            category: 'selector_repair',
+            scrapeJobId: input.runId,
+            competitorId: store.id,
+            productId: product.id,
+            event: 'selector_repair_applied',
+            metadata: { attemptId: repair.attemptId },
+          });
+          const retry = await runScrapeForProduct({
+            ...input,
+            skipSelectorRepair: true,
+          });
+          await recordSelectorRepairRetryResult({ attemptId: repair.attemptId, result: retry }).catch((err) =>
+            console.error('[selector_repair_attempts] retry result update failed', err),
+          );
+          logStructured({
+            service: 'web',
+            level: retry.ok ? 'info' : 'warn',
+            category: 'selector_repair',
+            scrapeJobId: input.runId,
+            competitorId: store.id,
+            productId: product.id,
+            event: retry.ok ? 'selector_repair_retry_success' : 'selector_repair_retry_failed',
+            metadata: { attemptId: repair.attemptId, result: retry },
+          });
+          return retry;
+        }
+
+        if (repair) {
+          logStructured({
+            service: 'web',
+            level: repair.status === 'skipped' ? 'warn' : repair.status === 'failed' ? 'error' : 'info',
+            category: 'selector_repair',
+            scrapeJobId: input.runId,
+            competitorId: store.id,
+            productId: product.id,
+            event: repair.status === 'skipped' ? 'selector_repair_skipped' : 'selector_repair_ai_suggested',
+            metadata: repair,
+          });
+        }
+      }
+    }
     return { ok: false, errorCode: response.errorCode, snapshotInserted: false };
   }
 
