@@ -12,6 +12,7 @@ import {
   BarChart3,
   Download,
   Activity,
+  Workflow,
   Bug,
   Settings,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ const NAV = [
   { href: '/matches', label: 'Matches', icon: GitMerge },
   { href: '/alerts', label: 'Alerts', icon: Bell },
   { href: '/jobs', label: 'Jobs', icon: ListTodo },
+  { href: '/automation', label: 'Automation', icon: Workflow },
   { href: '/debug/extractions', label: 'Debug', icon: Bug },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/system/health', label: 'System', icon: Activity },
@@ -34,7 +36,7 @@ const NAV = [
 export function Sidebar() {
   const pathname = usePathname();
   return (
-    <aside className="hidden w-60 shrink-0 border-r bg-card md:flex md:flex-col">
+    <aside className="bg-card hidden w-60 shrink-0 border-r md:flex md:flex-col">
       <div className="px-6 py-5">
         <Link href="/dashboard" className="text-base font-bold tracking-tight">
           Competitor Radar
@@ -60,7 +62,7 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="p-3 text-xs text-muted-foreground">
+      <div className="text-muted-foreground p-3 text-xs">
         <p>v0.1 · ethical scraping mode</p>
       </div>
     </aside>

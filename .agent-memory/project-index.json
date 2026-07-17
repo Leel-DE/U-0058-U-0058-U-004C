@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "updated_at": "2026-07-17",
+  "project": {
+    "name": "Competitor Radar",
+    "root": "D:/Apps/XXL",
+    "purpose": "Local-first competitor monitoring with a Next.js control plane, Fastify scraping worker, Inngest orchestration, and Supabase/Postgres persistence."
+  },
+  "subsystems": [
+    {
+      "id": "web-control-plane",
+      "source_of_truth": "apps/web",
+      "entry_points": ["apps/web/src/app", "apps/web/src/server/actions", "apps/web/src/lib/inngest/functions.ts"],
+      "dependencies": ["Next.js 15", "React 19", "Drizzle", "Supabase Auth", "Inngest"],
+      "validation": ["pnpm.cmd --filter @cr/web typecheck", "pnpm.cmd --filter @cr/web test"]
+    },
+    {
+      "id": "scraper-worker",
+      "source_of_truth": "apps/worker/src/server.ts",
+      "entry_points": ["apps/worker/src/server.ts", "apps/worker/src/fetcher/playwright.ts", "apps/worker/src/manual/browser-session-manager.ts"],
+      "dependencies": ["Fastify", "Playwright", "Cheerio", "Pino", "Gemini optional"],
+      "validation": ["pnpm.cmd --filter @cr/worker typecheck", "pnpm.cmd --filter @cr/worker test"]
+    },
+    {
+      "id": "database",
+      "source_of_truth": "packages/db/src/schema",
+      "entry_points": ["packages/db/src/schema/index.ts", "packages/db/src/apply-sql.ts", "packages/db/src/verify-schema.ts"],
+      "dependencies": ["Postgres", "Drizzle", "Supabase RLS/Auth/Storage"],
+      "validation": ["pnpm.cmd db:verify", "pnpm.cmd typecheck"]
+    },
+    {
+      "id": "shared-contracts",
+      "source_of_truth": "packages/shared/src",
+      "entry_points": ["packages/shared/src/schemas", "packages/shared/src/types.ts"],
+      "dependencies": ["Zod"],
+      "validation": ["pnpm.cmd --filter @cr/shared typecheck", "pnpm.cmd --filter @cr/shared test"]
+    },
+    {
+      "id": "local-runtime",
+      "source_of_truth": "apps/desktop and scripts",
+      "entry_points": ["apps/desktop/src/main.mjs", "scripts/setup-local.mjs", "scripts/run-with-local-env.mjs", "package.json#dev:desktop"],
+      "dependencies": ["Electron", "Docker Desktop", "local Supabase", "Next.js", "Fastify worker", "Inngest dev server"],
+      "validation": ["GET http://localhost:3000/automation", "GET http://localhost:4000/health", "Windows scheduled task Competition Radar Automation", "pnpm.cmd test"]
+    },
+    {
+      "id": "shipment-automation",
+      "source_of_truth": "apps/worker/src/shipments",
+      "entry_points": ["apps/worker/src/shipments/monitor.ts", "apps/worker/src/shipments/run.ts", "apps/web/src/app/(app)/automation", "apps/web/src/app/api/automation/route.ts"],
+      "dependencies": ["TorqueCore Supabase", "headed Playwright Chrome", "OpenAI optional", "Telegram optional"],
+      "validation": ["pnpm.cmd --filter @cr/worker test", "pnpm.cmd typecheck", "pnpm.cmd build", "real queued shipment run"]
+    }
+  ],
+  "facts": [
+    "The worker remains request-driven for competitor scraping and additionally owns a whitelisted TorqueCore shipment monitor backed by shipment_tracking_runs.",
+    "Scheduled competitor work is created by Inngest cron every five minutes and fan-outs store and product events with per-store concurrency limits.",
+    "Regular Playwright fetching is headless and pooled; manual takeover sessions use a separate headed persistent context and retain per-domain storage state.",
+    "apps/desktop is the Electron tray supervisor for hidden web, worker, and Inngest processes with automatic restart.",
+    "Shipment tracking uses headed minimized/off-screen Chrome, runs sequentially, and never promotes browser evidence into canonical TorqueCore shipment fields.",
+    "service_heartbeats is populated by the web health check rather than an autonomous worker heartbeat loop.",
+    "Local Supabase is already running on ports 54321-54323; web, worker, and Inngest were stopped during the 2026-07-17 audit.",
+    "Server-only credentials must remain outside NEXT_PUBLIC variables and must never be returned by worker health or application logs.",
+    "The repository currently contains unrelated user changes in .claude/settings.local.json and supabase/.temp/cli-latest; preserve them."
+  ]
+}

@@ -13,6 +13,7 @@
     "dev:web": "node scripts/run-with-local-env.mjs pnpm --filter @cr/web dev",
     "dev:worker": "node scripts/run-with-local-env.mjs pnpm --filter @cr/worker dev",
     "dev:inngest": "node scripts/run-with-local-env.mjs inngest-cli dev -u http://localhost:3000/api/inngest",
+    "dev:desktop": "pnpm --filter @cr/desktop dev",
     "inngest:dev": "pnpm dev:inngest",
     "worker:dev": "pnpm dev:worker",
     "web:dev": "pnpm dev:web",
