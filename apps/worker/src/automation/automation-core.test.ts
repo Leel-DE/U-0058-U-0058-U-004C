@@ -48,6 +48,35 @@ describe('strict browser job envelope', () => {
     expect(value).not.toHaveProperty('handler');
     expect(value).not.toHaveProperty('javascript');
   });
+
+  it('keeps shipment browser policy and requires a complete manual-session reference', () => {
+    const base = {
+      inputVersion: 1 as const,
+      shipmentId: crypto.randomUUID(),
+      trackingNumber: '1Z0R6D896828244757',
+      respectRobotsTxt: true,
+      forceJavaScript: false,
+      useAi: false,
+      manualContinuation: true,
+    };
+    expect(shipmentTrackingPayloadSchema.parse(base)).toMatchObject({
+      respectRobotsTxt: true,
+      forceJavaScript: false,
+      useAi: false,
+      manualContinuation: true,
+    });
+    expect(
+      shipmentTrackingPayloadSchema.safeParse({ ...base, manualSessionId: crypto.randomUUID() })
+        .success,
+    ).toBe(false);
+    expect(
+      shipmentTrackingPayloadSchema.safeParse({
+        ...base,
+        manualSessionId: crypto.randomUUID(),
+        manualProvider: 'ups',
+      }).success,
+    ).toBe(true);
+  });
 });
 
 describe('adaptive scheduling', () => {

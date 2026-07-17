@@ -90,6 +90,7 @@ export class TorqueCoreShipmentBridge {
         if (!remoteShipment) continue;
         const localShipmentId =
           localByRemoteId.get(run.shipment_id) ?? (await this.importShipment(remoteShipment));
+        const settings = await this.shipmentSettings(localShipmentId);
         const { error: queueError } = await this.local.from('automation_jobs').insert({
           org_id: this.orgId,
           type: 'shipment_tracking',
@@ -100,7 +101,10 @@ export class TorqueCoreShipmentBridge {
             trackingNumber: remoteShipment.tracking_number,
             externalShipmentId: remoteShipment.id,
             externalRunId: run.id,
-            manualContinuation: true,
+            respectRobotsTxt: settings.respectRobotsTxt,
+            forceJavaScript: settings.forceJavaScript,
+            useAi: settings.useAi,
+            manualContinuation: settings.useManualCaptcha,
           },
           dedupe_key: `torquecore-run:${run.id}`,
         });
@@ -151,6 +155,22 @@ export class TorqueCoreShipmentBridge {
       .single();
     if (error) throw error;
     return String(data.id);
+  }
+
+  private async shipmentSettings(shipmentId: string) {
+    const { data, error } = await this.local
+      .from('shipments')
+      .select('respect_robots_txt, force_javascript, use_ai, use_manual_captcha')
+      .eq('id', shipmentId)
+      .eq('org_id', this.orgId!)
+      .single();
+    if (error) throw error;
+    return {
+      respectRobotsTxt: Boolean(data.respect_robots_txt),
+      forceJavaScript: data.force_javascript !== false,
+      useAi: data.use_ai !== false,
+      useManualCaptcha: data.use_manual_captcha !== false,
+    };
   }
 
   async pushResult(job: BrowserAutomationJob, result: Record<string, unknown>) {

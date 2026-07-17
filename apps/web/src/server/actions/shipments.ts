@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { defineAction } from '@/lib/action';
 import { db, schema } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
+import { serverEnv } from '@/lib/env';
 
 const trackingNumberSchema = z
   .string()
@@ -21,7 +22,47 @@ const createShipmentSchema = z.object({
   carrierHint: z.string().trim().max(80).optional(),
   originCountry: z.string().trim().length(2).toUpperCase().optional().or(z.literal('')),
   destinationCountry: z.string().trim().length(2).toUpperCase().optional().or(z.literal('')),
+  respectRobotsTxt: z.boolean().default(false),
+  forceJavaScript: z.boolean().default(true),
+  useAi: z.boolean().default(true),
+  useManualCaptcha: z.boolean().default(true),
 });
+
+const trackingSettingsSchema = z.object({
+  shipmentId: z.string().uuid(),
+  respectRobotsTxt: z.boolean(),
+  forceJavaScript: z.boolean(),
+  useAi: z.boolean(),
+  useManualCaptcha: z.boolean(),
+});
+
+const manualSessionRefSchema = z.object({
+  id: z.string().uuid(),
+  provider: z.enum(['ups', 'postal_ninja', 'parcelsapp', 'ship24', '17track', 'yanwen']),
+  label: z.string().min(1),
+});
+
+function manualSessionFromResult(value: unknown) {
+  if (!value || typeof value !== 'object') return null;
+  const parsed = manualSessionRefSchema.safeParse(
+    (value as Record<string, unknown>).manualSession,
+  );
+  return parsed.success ? parsed.data : null;
+}
+
+async function focusWorkerSession(sessionId: string) {
+  const env = serverEnv();
+  const response = await fetch(`${env.WORKER_URL}/scrape/manual-session/focus`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${env.WORKER_SHARED_SECRET}`,
+    },
+    body: JSON.stringify({ sessionId }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error('Manual CAPTCHA window is no longer available. Run the check again.');
+}
 
 function queueValues(input: {
   orgId: string;
@@ -29,6 +70,12 @@ function queueValues(input: {
   trackingNumber: string;
   userId?: string;
   priority?: 'critical' | 'high' | 'normal' | 'low';
+  settings: {
+    respectRobotsTxt: boolean;
+    forceJavaScript: boolean;
+    useAi: boolean;
+    useManualCaptcha: boolean;
+  };
 }) {
   return {
     orgId: input.orgId,
@@ -39,7 +86,10 @@ function queueValues(input: {
       inputVersion: 1,
       shipmentId: input.shipmentId,
       trackingNumber: input.trackingNumber,
-      manualContinuation: true,
+      respectRobotsTxt: input.settings.respectRobotsTxt,
+      forceJavaScript: input.settings.forceJavaScript,
+      useAi: input.settings.useAi,
+      manualContinuation: input.settings.useManualCaptcha,
     },
     dedupeKey: `shipment:${input.shipmentId}`,
     createdBy: input.userId,
@@ -59,6 +109,10 @@ export const createShipment = defineAction(
         carrierHint: input.carrierHint || null,
         originCountry: input.originCountry || null,
         destinationCountry: input.destinationCountry || null,
+        respectRobotsTxt: input.respectRobotsTxt,
+        forceJavaScript: input.forceJavaScript,
+        useAi: input.useAi,
+        useManualCaptcha: input.useManualCaptcha,
         createdBy: ctx.user.id,
       });
       await tx.insert(schema.automationJobs).values(
@@ -67,6 +121,7 @@ export const createShipment = defineAction(
           shipmentId: id,
           trackingNumber: input.trackingNumber.replace(/\s+/g, '').toUpperCase(),
           userId: ctx.user.id,
+          settings: input,
         }),
       );
     });
@@ -76,7 +131,13 @@ export const createShipment = defineAction(
       action: 'shipment.create',
       entity: 'shipment',
       entityId: id,
-      after: { trackingNumber: input.trackingNumber },
+      after: {
+        trackingNumber: input.trackingNumber,
+        respectRobotsTxt: input.respectRobotsTxt,
+        forceJavaScript: input.forceJavaScript,
+        useAi: input.useAi,
+        useManualCaptcha: input.useManualCaptcha,
+      },
     });
     revalidatePath('/shipments');
     return { id };
@@ -113,11 +174,31 @@ export const bulkCreateShipments = defineAction(
       await db().transaction(async (tx) => {
         await tx
           .insert(schema.shipments)
-          .values({ id, orgId: ctx.orgId, trackingNumber, createdBy: ctx.user.id });
+          .values({
+            id,
+            orgId: ctx.orgId,
+            trackingNumber,
+            respectRobotsTxt: false,
+            forceJavaScript: true,
+            useAi: true,
+            useManualCaptcha: true,
+            createdBy: ctx.user.id,
+          });
         await tx
           .insert(schema.automationJobs)
           .values(
-            queueValues({ orgId: ctx.orgId, shipmentId: id, trackingNumber, userId: ctx.user.id }),
+            queueValues({
+              orgId: ctx.orgId,
+              shipmentId: id,
+              trackingNumber,
+              userId: ctx.user.id,
+              settings: {
+                respectRobotsTxt: false,
+                forceJavaScript: true,
+                useAi: true,
+                useManualCaptcha: true,
+              },
+            }),
           );
       });
       created += 1;
@@ -139,7 +220,14 @@ export const enqueueShipmentCheck = defineAction(
   z.object({ shipmentId: z.string().uuid() }),
   async (input, ctx) => {
     const [shipment] = await db()
-      .select({ id: schema.shipments.id, trackingNumber: schema.shipments.trackingNumber })
+      .select({
+        id: schema.shipments.id,
+        trackingNumber: schema.shipments.trackingNumber,
+        respectRobotsTxt: schema.shipments.respectRobotsTxt,
+        forceJavaScript: schema.shipments.forceJavaScript,
+        useAi: schema.shipments.useAi,
+        useManualCaptcha: schema.shipments.useManualCaptcha,
+      })
       .from(schema.shipments)
       .where(and(eq(schema.shipments.id, input.shipmentId), eq(schema.shipments.orgId, ctx.orgId)))
       .limit(1);
@@ -165,6 +253,7 @@ export const enqueueShipmentCheck = defineAction(
           trackingNumber: shipment.trackingNumber,
           userId: ctx.user.id,
           priority: 'critical',
+          settings: shipment,
         }),
       )
       .returning({ id: schema.automationJobs.id });
@@ -183,11 +272,51 @@ export const enqueueShipmentCheck = defineAction(
   { roles: ['owner', 'manager'] },
 );
 
+export const updateShipmentTrackingSettings = defineAction(
+  trackingSettingsSchema,
+  async (input, ctx) => {
+    const [shipment] = await db()
+      .update(schema.shipments)
+      .set({
+        respectRobotsTxt: input.respectRobotsTxt,
+        forceJavaScript: input.forceJavaScript,
+        useAi: input.useAi,
+        useManualCaptcha: input.useManualCaptcha,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(schema.shipments.id, input.shipmentId), eq(schema.shipments.orgId, ctx.orgId)),
+      )
+      .returning({ id: schema.shipments.id });
+    if (!shipment) throw new Error('Shipment not found');
+    await logAudit({
+      orgId: ctx.orgId,
+      userId: ctx.user.id,
+      action: 'shipment.tracking_settings.update',
+      entity: 'shipment',
+      entityId: shipment.id,
+      after: {
+        respectRobotsTxt: input.respectRobotsTxt,
+        forceJavaScript: input.forceJavaScript,
+        useAi: input.useAi,
+        useManualCaptcha: input.useManualCaptcha,
+      },
+    });
+    revalidatePath(`/shipments/${shipment.id}`);
+    return { id: shipment.id };
+  },
+  { roles: ['owner', 'manager'] },
+);
+
 export const resumeCaptchaJob = defineAction(
   z.object({ jobId: z.string().uuid() }),
   async (input, ctx) => {
     const [job] = await db()
-      .select({ id: schema.automationJobs.id })
+      .select({
+        id: schema.automationJobs.id,
+        payloadJson: schema.automationJobs.payloadJson,
+        resultJson: schema.automationJobs.resultJson,
+      })
       .from(schema.automationJobs)
       .where(
         and(
@@ -198,12 +327,52 @@ export const resumeCaptchaJob = defineAction(
       )
       .limit(1);
     if (!job) throw new Error('Awaiting job not found');
+    const manualSession = manualSessionFromResult(job.resultJson);
+    if (!manualSession) throw new Error('Manual CAPTCHA session not found');
     await db()
       .update(schema.automationJobs)
-      .set({ status: 'queued', scheduledAt: new Date(), finishedAt: null, updatedAt: new Date() })
+      .set({
+        status: 'queued',
+        payloadJson: {
+          ...job.payloadJson,
+          providerIds: [manualSession.provider],
+          manualContinuation: true,
+          manualSessionId: manualSession.id,
+          manualProvider: manualSession.provider,
+        },
+        scheduledAt: new Date(),
+        finishedAt: null,
+        updatedAt: new Date(),
+      })
       .where(eq(schema.automationJobs.id, job.id));
     revalidatePath('/jobs');
+    revalidatePath(`/jobs/${job.id}`);
+    if (typeof job.payloadJson.shipmentId === 'string') {
+      revalidatePath(`/shipments/${job.payloadJson.shipmentId}`);
+    }
     return { jobId: job.id };
+  },
+  { roles: ['owner', 'manager'] },
+);
+
+export const openCaptchaBrowser = defineAction(
+  z.object({ jobId: z.string().uuid() }),
+  async (input, ctx) => {
+    const [job] = await db()
+      .select({ resultJson: schema.automationJobs.resultJson })
+      .from(schema.automationJobs)
+      .where(
+        and(
+          eq(schema.automationJobs.id, input.jobId),
+          eq(schema.automationJobs.orgId, ctx.orgId),
+          eq(schema.automationJobs.status, 'awaiting_user'),
+        ),
+      )
+      .limit(1);
+    const manualSession = manualSessionFromResult(job?.resultJson);
+    if (!manualSession) throw new Error('Manual CAPTCHA session not found');
+    await focusWorkerSession(manualSession.id);
+    return { jobId: input.jobId, sessionId: manualSession.id };
   },
   { roles: ['owner', 'manager'] },
 );

@@ -43,23 +43,35 @@ export const competitorDiscoveryPayloadSchema = basePayloadSchema.extend({
   discoveryRunId: z.string().uuid().optional(),
 });
 
-export const shipmentTrackingPayloadSchema = basePayloadSchema.extend({
-  shipmentId: z.string().uuid(),
-  trackingNumber: z
-    .string()
-    .trim()
-    .min(4)
-    .max(100)
-    .regex(/^[A-Za-z0-9._\- ]+$/),
-  providerIds: z
-    .array(z.enum(['ups', 'postal_ninja', 'parcelsapp', 'ship24', '17track', 'yanwen']))
-    .min(1)
-    .max(6)
-    .optional(),
-  manualContinuation: z.boolean().default(true),
-  externalShipmentId: z.string().uuid().optional(),
-  externalRunId: z.string().uuid().optional(),
-});
+export const shipmentTrackingPayloadSchema = basePayloadSchema
+  .extend({
+    shipmentId: z.string().uuid(),
+    trackingNumber: z
+      .string()
+      .trim()
+      .min(4)
+      .max(100)
+      .regex(/^[A-Za-z0-9._\- ]+$/),
+    providerIds: z
+      .array(z.enum(['ups', 'postal_ninja', 'parcelsapp', 'ship24', '17track', 'yanwen']))
+      .min(1)
+      .max(6)
+      .optional(),
+    respectRobotsTxt: z.boolean().default(false),
+    forceJavaScript: z.boolean().default(true),
+    useAi: z.boolean().default(true),
+    manualContinuation: z.boolean().default(true),
+    manualSessionId: z.string().uuid().optional(),
+    manualProvider: z
+      .enum(['ups', 'postal_ninja', 'parcelsapp', 'ship24', '17track', 'yanwen'])
+      .optional(),
+    externalShipmentId: z.string().uuid().optional(),
+    externalRunId: z.string().uuid().optional(),
+  })
+  .refine((value) => Boolean(value.manualSessionId) === Boolean(value.manualProvider), {
+    message: 'Manual session and provider must be supplied together.',
+    path: ['manualSessionId'],
+  });
 
 export const browserAutomationPayloadSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('competitor_scrape'), payload: competitorScrapePayloadSchema }),

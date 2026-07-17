@@ -110,6 +110,8 @@ export class ShipmentResultStore {
   }
 
   private async updateProviderHealth(orgId: string, provider: Record<string, unknown>) {
+    // Respecting robots.txt is an operator policy, not a provider outage.
+    if (provider.state === 'robots_disallowed') return;
     const providerId = String(provider.provider);
     const succeeded = provider.state === 'success';
     const captcha = provider.state === 'captcha';

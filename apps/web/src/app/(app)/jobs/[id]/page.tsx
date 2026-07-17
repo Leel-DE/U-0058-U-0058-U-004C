@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CancelJobControl, DeleteJobControl } from '../../automation/_components/job-controls';
+import { ResumeButton } from '../../shipments/_components/resume-button';
 
 export const dynamic = 'force-dynamic';
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -54,6 +55,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {job.status === 'awaiting_user' && ctx.role !== 'viewer' ? (
+            <ResumeButton jobId={job.id} />
+          ) : null}
           {active && ctx.role !== 'viewer' ? <CancelJobControl jobId={job.id} /> : null}
           {terminal && ctx.role === 'owner' ? <DeleteJobControl jobId={job.id} /> : null}
         </div>

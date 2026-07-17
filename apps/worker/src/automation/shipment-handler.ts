@@ -1,4 +1,5 @@
-import { shipmentTrackingPayloadSchema } from '@cr/shared';
+import { shipmentTrackingPayloadSchema, USER_AGENT } from '@cr/shared';
+import * as cheerio from 'cheerio';
 import { z } from 'zod';
 import { PagePreparationService } from './page-handlers.js';
 import { shipmentAdapters } from './shipment-adapters.js';
@@ -10,6 +11,16 @@ import {
 } from '../shipments/tracking-core.js';
 import { createAutomationClient } from './job-lease-manager.js';
 import { OpenAIProcessingService } from './openai-processing-service.js';
+import { classifyResponse } from '../detect/block.js';
+import {
+  completeManualSession,
+  continueManualSession,
+  markManualSession,
+  sessionStatus,
+  startManualSession,
+} from '../manual/session-manager.js';
+import type { TrackingProviderAdapter } from './types.js';
+import { checkRobots } from '../robots/check.js';
 
 const statusSchema = z.enum([
   'pending',
@@ -89,6 +100,57 @@ function evidenceSummary(value: unknown) {
   return [...new Set(relevant)].slice(0, 8).join(' · ').slice(0, 600) || null;
 }
 
+async function readManualProvider(
+  sessionId: string,
+  adapter: TrackingProviderAdapter,
+  trackingNumber: string,
+) {
+  const startedAt = Date.now();
+  const { status: session, fetched } = await continueManualSession(sessionId, 30_000);
+  if (!session || !fetched) {
+    return {
+      provider: adapter.id,
+      label: adapter.label,
+      state: 'captcha',
+      status: 'unknown' as const,
+      errorCode: 'manual_session_unavailable',
+      durationMs: Date.now() - startedAt,
+    };
+  }
+  const pageState = classifyResponse(fetched.status, fetched.html);
+  if (
+    !pageState.ok &&
+    ['captcha', 'blocked', 'suspicious'].includes(pageState.code)
+  ) {
+    markManualSession(
+      sessionId,
+      'waiting_for_manual_action',
+      `${adapter.label}: CAPTCHA is still visible.`,
+    );
+    return {
+      provider: adapter.id,
+      label: adapter.label,
+      state: 'captcha',
+      status: 'unknown' as const,
+      durationMs: Date.now() - startedAt,
+    };
+  }
+
+  const text = cheerio.load(fetched.html)('body').text().replace(/\s+/g, ' ').trim();
+  const classified = classifyTrackingPage({ text, trackingNumber });
+  const status = normalizeStatus(classified.statusHint);
+  await completeManualSession(sessionId, `${adapter.label}: manual CAPTCHA check completed.`);
+  return {
+    provider: adapter.id,
+    label: adapter.label,
+    state: classified.state,
+    status,
+    excerpt: buildTrackingExcerpt(text, trackingNumber, 1_500),
+    httpStatus: fetched.status,
+    durationMs: Date.now() - startedAt,
+  };
+}
+
 export function createShipmentTrackingHandler(): BrowserJobHandler {
   const preparation = new PagePreparationService();
   const ai = new OpenAIProcessingService();
@@ -120,6 +182,7 @@ export function createShipmentTrackingHandler(): BrowserJobHandler {
       if (signal.aborted) throw new Error('job_cancelled');
       const adapter = adapters[index]!;
       if (adapter.id === 'ups' && !isUpsTrackingNumber(payload.trackingNumber)) continue;
+      const providerUrl = adapter.buildUrl(payload.trackingNumber).toString();
       const progress = Math.round((index / Math.max(adapters.length, 1)) * 90);
       await heartbeat({ progress, provider: adapter.id });
       await log({
@@ -128,10 +191,49 @@ export function createShipmentTrackingHandler(): BrowserJobHandler {
         message: `Проверяется ${adapter.label}`,
         progress,
       });
+      if (payload.respectRobotsTxt) {
+        const robots = await checkRobots(providerUrl, USER_AGENT);
+        if (!robots.allowed) {
+          results.push({
+            provider: adapter.id,
+            label: adapter.label,
+            state: 'robots_disallowed',
+            status: 'unknown',
+            errorCode: 'robots_disallowed',
+          });
+          await log({
+            level: 'warn',
+            event: 'provider_skipped_robots',
+            message: `${adapter.label}: источник запрещён robots.txt и был пропущен.`,
+            progress,
+          });
+          continue;
+        }
+      }
+      if (payload.manualSessionId && payload.manualProvider === adapter.id) {
+        const manualResult = await readManualProvider(
+          payload.manualSessionId,
+          adapter,
+          payload.trackingNumber,
+        );
+        results.push(manualResult);
+        if (manualResult.state === 'captcha') captchaProviders.push(adapter.id);
+        await log({
+          level: manualResult.state === 'success' ? 'info' : 'warn',
+          event:
+            manualResult.state === 'captcha' ? 'captcha_still_present' : 'provider_completed',
+          message:
+            manualResult.state === 'captcha'
+              ? `${adapter.label}: CAPTCHA всё ещё открыта; завершите её в видимом окне.`
+              : `${adapter.label}: ${manualResult.state}`,
+          progress: progress + 10,
+        });
+        continue;
+      }
       const startedAt = Date.now();
       const page = await browserContext.newPage();
       try {
-        const response = await page.goto(adapter.buildUrl(payload.trackingNumber).toString(), {
+        const response = await page.goto(providerUrl, {
           waitUntil: 'domcontentloaded',
           timeout: 45_000,
         });
@@ -148,12 +250,14 @@ export function createShipmentTrackingHandler(): BrowserJobHandler {
           await log({
             level: 'warn',
             event: 'captcha_detected',
-            message: `${adapter.label}: требуется ручная проверка CAPTCHA`,
+            message: payload.manualContinuation
+              ? `${adapter.label}: CAPTCHA обнаружена; после проверки остальных источников откроется ручной режим.`
+              : `${adapter.label}: CAPTCHA обнаружена; ручной режим выключен, источник пропущен.`,
             progress,
           });
           continue;
         }
-        await adapter.waitForResult(page);
+        if (payload.forceJavaScript) await adapter.waitForResult(page);
         const text = String(await adapter.extract(page, payload.trackingNumber));
         const classified = classifyTrackingPage({ text, trackingNumber: payload.trackingNumber });
         const status = normalizeStatus(classified.statusHint);
@@ -199,7 +303,7 @@ export function createShipmentTrackingHandler(): BrowserJobHandler {
     const confidence = useful.length === 0 ? 0 : Math.min(0.98, 0.55 + useful.length * 0.12);
     const fallbackPresentation = friendly(consensusStatus);
     const presentation =
-      useful.length > 0
+      useful.length > 0 && payload.useAi
         ? await ai
             .improve({
               status: consensusStatus,
@@ -227,8 +331,60 @@ export function createShipmentTrackingHandler(): BrowserJobHandler {
       preserveLastConfirmed: useful.length === 0,
     };
 
-    if (useful.length === 0 && captchaProviders.length > 0 && payload.manualContinuation) {
-      return { status: 'awaiting_user', result: { ...report, manualActionRequired: 'captcha' } };
+    if (captchaProviders.length > 0 && payload.manualContinuation) {
+      const manualProvider = payload.manualProvider ?? captchaProviders[0];
+      const manualAdapter = shipmentAdapters.find((adapter) => adapter.id === manualProvider);
+      let manualSession = payload.manualSessionId ? sessionStatus(payload.manualSessionId) : null;
+      if (
+        manualAdapter &&
+        (!manualSession || ['failed', 'cancelled', 'expired'].includes(manualSession.status))
+      ) {
+        manualSession = await startManualSession(
+          manualAdapter.buildUrl(payload.trackingNumber).toString(),
+          USER_AGENT,
+          60_000,
+        ).catch(() => null);
+        if (manualSession) {
+          markManualSession(
+            manualSession.id,
+            'waiting_for_manual_action',
+            `${manualAdapter.label}: complete CAPTCHA, then continue the shipment job.`,
+          );
+        }
+      }
+      if (
+        manualAdapter &&
+        manualSession &&
+        !manualSession.closedAt &&
+        !['failed', 'cancelled', 'expired', 'completed'].includes(manualSession.status)
+      ) {
+        await log({
+          level: 'warn',
+          event: 'manual_action_required',
+          message: `${manualAdapter.label}: открыто видимое окно. Пройдите CAPTCHA и нажмите «Я прошёл CAPTCHA».`,
+          progress: 90,
+          metadata: { sessionId: manualSession.id, provider: manualAdapter.id },
+        });
+        return {
+          status: 'awaiting_user',
+          result: {
+            ...report,
+            manualActionRequired: 'captcha',
+            manualSession: {
+              id: manualSession.id,
+              provider: manualAdapter.id,
+              label: manualAdapter.label,
+              status: manualSession.status,
+            },
+          },
+        };
+      }
+      await log({
+        level: 'error',
+        event: 'manual_session_failed',
+        message: 'Не удалось открыть видимое окно CAPTCHA. Перезапустите локальный worker.',
+        progress: 90,
+      });
     }
     return { status: useful.length === adapters.length ? 'succeeded' : 'partial', result: report };
   };

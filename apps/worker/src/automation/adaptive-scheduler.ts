@@ -30,7 +30,9 @@ export class AdaptiveScheduler {
     if (enabledOrgIds.length === 0) return 0;
     const { data, error } = await this.client
       .from('shipments')
-      .select('id, org_id, tracking_number')
+      .select(
+        'id, org_id, tracking_number, respect_robots_txt, force_javascript, use_ai, use_manual_captcha',
+      )
       .in('org_id', enabledOrgIds)
       .eq('tracking_enabled', true)
       .lte('next_check_at', now)
@@ -47,7 +49,10 @@ export class AdaptiveScheduler {
           inputVersion: 1,
           shipmentId: shipment.id,
           trackingNumber: shipment.tracking_number,
-          manualContinuation: true,
+          respectRobotsTxt: shipment.respect_robots_txt,
+          forceJavaScript: shipment.force_javascript,
+          useAi: shipment.use_ai,
+          manualContinuation: shipment.use_manual_captcha,
         },
         dedupe_key: `shipment:${shipment.id}`,
       });

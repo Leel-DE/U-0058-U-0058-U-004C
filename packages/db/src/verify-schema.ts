@@ -132,6 +132,21 @@ async function main() {
     const tables = tableRows.map((row) => row.table_name);
     checks.push(checkIncludes('tables', tables, REQUIRED_TABLES));
 
+    const columnRows = await sql<{ table_name: string; column_name: string }[]>`
+      select table_name, column_name
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'shipments'
+    `;
+    const shipmentColumns = columnRows.map((row) => `${row.table_name}.${row.column_name}`);
+    checks.push(
+      checkIncludes('shipment_settings_columns', shipmentColumns, [
+        'shipments.respect_robots_txt',
+        'shipments.force_javascript',
+        'shipments.use_ai',
+        'shipments.use_manual_captcha',
+      ]),
+    );
+
     const indexRows = await sql<{ indexname: string }[]>`
       select indexname from pg_indexes where schemaname = 'public'
     `;

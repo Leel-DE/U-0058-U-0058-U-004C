@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ShipmentStatusBadge } from '../_components/status-badge';
 import { CheckButton } from '../_components/check-button';
 import { ResumeButton } from '../_components/resume-button';
+import { TrackingSettingsForm } from '../_components/tracking-settings';
 import { timeAgo } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -241,6 +242,25 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           )}
         </div>
       </details>
+
+      {canManage ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Настройки проверки</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TrackingSettingsForm
+              shipmentId={shipment.id}
+              initialValue={{
+                respectRobotsTxt: shipment.respectRobotsTxt,
+                forceJavaScript: shipment.forceJavaScript,
+                useAi: shipment.useAi,
+                useManualCaptcha: shipment.useManualCaptcha,
+              }}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

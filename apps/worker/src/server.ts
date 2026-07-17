@@ -33,6 +33,7 @@ import { detectCategoryHeuristics } from './ai/validators/category-heuristic.js'
 import {
   cancelManualSession,
   continueManualSession,
+  focusManualSession,
   getDomainStorageState,
   markManualSession,
   sessionStatus,
@@ -1227,6 +1228,20 @@ app.post('/scrape/manual-session/reopen', async (req, reply) => {
     return { ok: false, message: 'invalid_payload' };
   }
   const session = await reopenManualSession(parse.data.sessionId);
+  if (!session) {
+    reply.code(404);
+    return { ok: false, message: 'session_not_found' };
+  }
+  return { ok: true, session };
+});
+
+app.post('/scrape/manual-session/focus', async (req, reply) => {
+  const parse = reopenSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  const session = await focusManualSession(parse.data.sessionId);
   if (!session) {
     reply.code(404);
     return { ok: false, message: 'session_not_found' };
