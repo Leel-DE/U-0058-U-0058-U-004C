@@ -10,6 +10,22 @@ create extension if not exists "pg_trgm";
 create extension if not exists "citext";
 
 -- =====================================================================
+-- Supabase role shims for bare Postgres (tests/CI)
+-- =====================================================================
+-- Supabase creates these roles itself. A plain Postgres service does not,
+-- but later grants and RLS policies still need the role names to exist.
+do $$
+declare
+  role_name text;
+begin
+  foreach role_name in array array['anon', 'authenticated', 'service_role'] loop
+    if not exists (select 1 from pg_roles where rolname = role_name) then
+      execute format('create role %I nologin', role_name);
+    end if;
+  end loop;
+end $$;
+
+-- =====================================================================
 -- Shim: provide a stub auth.uid() so RLS policies referencing it compile
 -- on bare Postgres (used by tests/CI). On real Supabase the auth schema
 -- and its functions already exist; we MUST NOT overwrite them.

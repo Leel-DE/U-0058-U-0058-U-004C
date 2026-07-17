@@ -133,6 +133,7 @@
     "Shipment provider adapters use fixed HTTPS URL templates; cookie consent is accepted, obstructive popups are dismissed, and CAPTCHA pauses only the affected provider/workflow.",
     "Shipment browser policy is persisted per shipment: respect robots.txt, extended JavaScript result waiting, optional AI presentation, and manual CAPTCHA takeover; every queue entry point copies these settings into the versioned job payload.",
     "Manual shipment CAPTCHA takeover preserves a visible browser session in the awaiting_user result. The UI can focus that session, and resume reads the solved page from the same session before closing it.",
+    "Bare PostgreSQL CI needs the Supabase role names anon, authenticated, and service_role before applying grants and RLS SQL; the initial raw SQL creates no-login shims only when those roles are absent.",
     "Normalized shipment status is deterministic; OpenAI is optional and may improve presentation but cannot change the selected status.",
     "TorqueCore integration is a live bridge that imports remote shipment requests into the local queue and writes normalized status/results back to its Supabase project.",
     "Electron is the tray supervisor, keeps renderer isolation enabled, prevents external navigation, and stores optional local secrets through safeStorage.",

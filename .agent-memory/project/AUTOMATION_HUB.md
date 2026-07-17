@@ -32,6 +32,7 @@
 14. Pausing must persist the policy before cancelling active jobs. Inngest dispatch, the shipment scheduler, and SQL job claims must all honor the paused policy so jobs cannot be recreated or claimed.
 15. The SQL claim function enforces per-organization concurrency; `AUTOMATION_CONCURRENCY` is only the process-wide safety ceiling.
 16. Shipment browser policy is stored per shipment (`respect_robots_txt`, `force_javascript`, `use_ai`, `use_manual_captcha`) and copied into every manual, scheduled, bulk, and TorqueCore-bridged job payload.
+17. Raw SQL must remain portable to bare PostgreSQL in CI. `0001_extensions_and_triggers.sql` supplies no-login shims for the Supabase roles `anon`, `authenticated`, and `service_role` only when those roles do not already exist.
 
 ## Operations controls
 
