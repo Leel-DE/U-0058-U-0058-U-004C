@@ -53,6 +53,72 @@ function toAlpha2(value: string | null | undefined): string | null {
   return trimmed.length === 2 ? trimmed : null;
 }
 
+// TorqueCore validates every stored source result against a fixed schema and
+// rejects unknown shapes. Map Radar's provider evidence into that canonical
+// shape (source/checkedAt/statusHint/excerpt/error) and drop sources TorqueCore
+// does not know (e.g. Yanwen) so the admin run parser never throws.
+const TORQUECORE_SOURCES = new Set([
+  'ups',
+  'postal_ninja',
+  'parcelsapp',
+  'ship24',
+  '17track',
+]);
+const TORQUECORE_SOURCE_STATES = new Set([
+  'success',
+  'captcha',
+  'blocked',
+  'paywall',
+  'not_found',
+  'irrelevant',
+  'not_configured',
+  'timeout',
+  'error',
+]);
+const TORQUECORE_STATUS_HINTS = new Set([
+  'registered',
+  'in_transit',
+  'customs',
+  'out_for_delivery',
+  'delivered',
+  'exception',
+  'returned',
+  'unknown',
+]);
+
+function toTorqueCoreSourceResults(providers: unknown, checkedAt: string) {
+  if (!Array.isArray(providers)) return [];
+  const rows: Array<Record<string, unknown>> = [];
+  for (const raw of providers) {
+    if (!raw || typeof raw !== 'object') continue;
+    const provider = raw as Record<string, unknown>;
+    const source = typeof provider.provider === 'string' ? provider.provider : null;
+    if (!source || !TORQUECORE_SOURCES.has(source)) continue;
+    const state =
+      typeof provider.state === 'string' && TORQUECORE_SOURCE_STATES.has(provider.state)
+        ? provider.state
+        : 'error';
+    const rawStatus =
+      typeof provider.status === 'string'
+        ? provider.status === 'info_received'
+          ? 'registered'
+          : provider.status
+        : null;
+    const statusHint = rawStatus && TORQUECORE_STATUS_HINTS.has(rawStatus) ? rawStatus : null;
+    const label =
+      typeof provider.label === 'string' && provider.label.trim()
+        ? provider.label.trim().slice(0, 80)
+        : source;
+    const excerpt =
+      typeof provider.evidenceSummary === 'string' && provider.evidenceSummary.trim()
+        ? provider.evidenceSummary.slice(0, 4000)
+        : null;
+    const httpStatus = typeof provider.httpStatus === 'number' ? provider.httpStatus : null;
+    rows.push({ source, label, state, checkedAt, httpStatus, statusHint, excerpt, error: null });
+  }
+  return rows;
+}
+
 export class TorqueCoreShipmentBridge {
   private remote: SupabaseClient | null = null;
   private timer: NodeJS.Timeout | null = null;
@@ -341,7 +407,7 @@ export class TorqueCoreShipmentBridge {
           .from('shipment_tracking_runs')
           .update({
             status: 'partial',
-            source_results: Array.isArray(result.providers) ? result.providers : [],
+            source_results: toTorqueCoreSourceResults(result.providers, checkedAt),
             error_summary:
               result.manualActionRequired === 'captcha'
                 ? 'Local browser is waiting for manual CAPTCHA confirmation.'
@@ -364,16 +430,14 @@ export class TorqueCoreShipmentBridge {
       })
       .eq('id', externalShipmentId);
     if (externalRunId) {
-      const providers = Array.isArray(result.providers) ? result.providers : [];
+      const sourceResults = toTorqueCoreSourceResults(result.providers, checkedAt);
       await this.remote
         .from('shipment_tracking_runs')
         .update({
-          status: providers.some(
-            (provider) => (provider as Record<string, unknown>).state === 'success',
-          )
+          status: sourceResults.some((row) => row.state === 'success')
             ? 'succeeded'
             : 'partial',
-          source_results: providers,
+          source_results: sourceResults,
           ai_presentation: {
             displayStatus: status,
             headline: result.title,
