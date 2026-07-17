@@ -5,6 +5,26 @@ export class CompetitionResultStore {
   constructor(private readonly client: SupabaseClient) {}
 
   async record(job: BrowserAutomationJob, succeeded: boolean) {
+    const productId =
+      typeof job.payload.competitorProductId === 'string' ? job.payload.competitorProductId : null;
+    if (productId) {
+      const { data: settings, error: settingsError } = await this.client
+        .from('automation_settings')
+        .select('competitor_interval_minutes')
+        .eq('org_id', job.orgId)
+        .maybeSingle();
+      if (settingsError) throw settingsError;
+      const intervalMinutes = Number(settings?.competitor_interval_minutes ?? 1440);
+      const { error: scheduleError } = await this.client
+        .from('competitor_products')
+        .update({
+          next_run_at: new Date(Date.now() + intervalMinutes * 60_000).toISOString(),
+        })
+        .eq('id', productId)
+        .eq('org_id', job.orgId);
+      if (scheduleError) throw scheduleError;
+    }
+
     const runId = typeof job.payload.scrapeRunId === 'string' ? job.payload.scrapeRunId : null;
     if (!runId) return;
     const { data: run, error } = await this.client

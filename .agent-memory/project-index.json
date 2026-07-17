@@ -125,6 +125,9 @@
   "facts": [
     "All browser work is represented by strict versioned jobs: competitor_discovery, competitor_scrape, or shipment_tracking; arbitrary URLs, JavaScript, shell commands, and handler names are rejected.",
     "The Postgres automation_jobs table and service-role-only claim, heartbeat, and stale-recovery functions are the durable queue source of truth.",
+    "The automation_settings row is the organization-scoped source of truth for running or paused state, competitor scrape interval, and maximum parallel jobs; switching accounts does not change another organization's policy.",
+    "A durable pause is written before active jobs are cancelled and is enforced by Inngest dispatch, the shipment scheduler, and the SQL claim function so recurring work cannot immediately recreate or claim jobs.",
+    "Per-organization concurrency is enforced while claiming jobs in Postgres; AUTOMATION_CONCURRENCY remains only the process-wide safety ceiling.",
     "Competition scraping and shipment tracking share one lazy BrowserLauncher and concurrency budget; the legacy shipment monitor is not started by server.ts.",
     "Browser mode is adaptive: headed minimized/off-screen real Chrome on Windows and headless Chromium on Linux, with optional proxy support.",
     "Shipment provider adapters use fixed HTTPS URL templates; cookie consent is accepted, obstructive popups are dismissed, and CAPTCHA pauses only the affected provider/workflow.",

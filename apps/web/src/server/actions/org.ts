@@ -40,6 +40,10 @@ export async function createOrganization(rawInput: unknown) {
         userId: user.id,
         role: 'owner',
       });
+      await tx.insert(schema.automationSettings).values({
+        orgId: org.id,
+        updatedBy: user.id,
+      });
       return org;
     });
 

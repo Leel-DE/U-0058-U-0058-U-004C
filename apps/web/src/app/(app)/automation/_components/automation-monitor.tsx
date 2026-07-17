@@ -68,6 +68,12 @@ interface Payload {
   events?: RuntimeEvent[];
   queue?: QueueState;
   webProcess?: WebProcess;
+  automationPolicy?: {
+    enabled: boolean;
+    competitorIntervalMinutes: number;
+    maxConcurrentJobs: number;
+    nextCompetitorRunAt: string | null;
+  };
   message?: string;
 }
 
@@ -134,6 +140,7 @@ export function AutomationMonitor({
 
   const runtime = payload?.automationHub;
   const queue = payload?.queue;
+  const policy = payload?.automationPolicy;
   const running = Number(queue?.counts.running ?? 0);
   const queued = Number(queue?.counts.queued ?? 0);
   const waiting = Number(queue?.counts.awaiting_user ?? 0);
@@ -143,7 +150,9 @@ export function AutomationMonitor({
       {error ? (
         <div className="border-destructive/30 bg-destructive/10 flex items-start gap-2 rounded-md border p-4 text-base sm:text-sm">
           <AlertTriangle className="text-destructive size-4 shrink-0" />
-          <p className="text-pretty">{error} Queue records below remain available.</p>
+          <p className="text-pretty">
+            {error} Queue records below remain available. Retrying every three seconds.
+          </p>
         </div>
       ) : null}
 
@@ -163,24 +172,29 @@ export function AutomationMonitor({
               totalCount={queue.totalCount}
               canStop={canStop}
               canDelete={canDelete}
+              automationEnabled={policy?.enabled ?? true}
               onChanged={refresh}
             />
           ) : null}
         </div>
 
-        <dl className="grid gap-y-4 border-y py-4 sm:grid-cols-2 sm:gap-x-6 xl:grid-cols-4">
+        <dl className="grid gap-y-4 border-y py-4 sm:grid-cols-2 sm:gap-x-6 xl:grid-cols-5">
           <div>
             <dt className="truncate font-medium">Runtime State</dt>
             <dd className="text-muted-foreground pt-1">
-              <Badge variant={statusVariant(runtime?.state ?? 'offline')}>
-                {runtime?.state ?? 'offline'}
+              <Badge
+                variant={statusVariant(
+                  policy?.enabled === false ? 'paused' : (runtime?.state ?? 'offline'),
+                )}
+              >
+                {policy?.enabled === false ? 'paused' : (runtime?.state ?? 'offline')}
               </Badge>
             </dd>
           </div>
           <div>
             <dt className="truncate font-medium">Running Jobs</dt>
             <dd className="text-muted-foreground pt-1 text-2xl font-semibold tabular-nums">
-              {running}/{runtime?.concurrency ?? 0}
+              {running}/{policy?.maxConcurrentJobs ?? runtime?.concurrency ?? 0}
             </dd>
           </div>
           <div>
@@ -193,6 +207,12 @@ export function AutomationMonitor({
             <dt className="truncate font-medium">Waiting For Input</dt>
             <dd className="text-muted-foreground pt-1 text-2xl font-semibold tabular-nums">
               {waiting}
+            </dd>
+          </div>
+          <div>
+            <dt className="truncate font-medium">Next Competitor Run</dt>
+            <dd className="text-muted-foreground pt-1 text-base font-semibold sm:text-sm">
+              {policy?.enabled === false ? 'Paused' : formatTime(policy?.nextCompetitorRunAt)}
             </dd>
           </div>
         </dl>
@@ -322,7 +342,9 @@ export function AutomationMonitor({
           </div>
         ) : (
           <p className="text-muted-foreground text-pretty border-t pt-4 text-base sm:text-sm">
-            No active jobs. New shipment checks and competitor scans will appear here when queued.
+            {policy?.enabled === false
+              ? 'No active jobs. Scheduled work remains paused until automation is resumed.'
+              : 'No active jobs. New shipment checks and competitor scans will appear here when queued.'}
           </p>
         )}
       </section>

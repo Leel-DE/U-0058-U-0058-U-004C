@@ -8,9 +8,11 @@ import {
   jsonb,
   numeric,
   bigserial,
+  check,
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { organizations } from './organizations';
 import { profiles } from './profiles';
 import {
@@ -20,6 +22,31 @@ import {
   providerResultStatusEnum,
   shipmentStatusEnum,
 } from './enums';
+
+export const automationSettings = pgTable(
+  'automation_settings',
+  {
+    orgId: uuid('org_id')
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    enabled: boolean('enabled').default(true).notNull(),
+    competitorIntervalMinutes: integer('competitor_interval_minutes').default(1440).notNull(),
+    maxConcurrentJobs: integer('max_concurrent_jobs').default(1).notNull(),
+    updatedBy: uuid('updated_by').references(() => profiles.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    intervalCheck: check(
+      'automation_settings_interval_check',
+      sql`${t.competitorIntervalMinutes} between 60 and 10080`,
+    ),
+    concurrencyCheck: check(
+      'automation_settings_concurrency_check',
+      sql`${t.maxConcurrentJobs} between 1 and 4`,
+    ),
+  }),
+);
 
 export const shipments = pgTable(
   'shipments',
@@ -271,4 +298,5 @@ export const shipmentUpdateRequests = pgTable(
 );
 
 export type AutomationJob = typeof automationJobs.$inferSelect;
+export type AutomationSettings = typeof automationSettings.$inferSelect;
 export type Shipment = typeof shipments.$inferSelect;

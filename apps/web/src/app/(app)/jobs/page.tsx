@@ -22,7 +22,7 @@ function statusVariant(status: string) {
 
 export default async function JobsPage() {
   const ctx = await getContext();
-  const [jobs, statusCounts] = await Promise.all([
+  const [jobs, statusCounts, settingsRows] = await Promise.all([
     db()
       .select()
       .from(schema.automationJobs)
@@ -34,7 +34,13 @@ export default async function JobsPage() {
       .from(schema.automationJobs)
       .where(eq(schema.automationJobs.orgId, ctx.orgId))
       .groupBy(schema.automationJobs.status),
+    db()
+      .select({ enabled: schema.automationSettings.enabled })
+      .from(schema.automationSettings)
+      .where(eq(schema.automationSettings.orgId, ctx.orgId))
+      .limit(1),
   ]);
+  const automationEnabled = settingsRows[0]?.enabled ?? true;
   const counts = Object.fromEntries(statusCounts.map((row) => [row.status, Number(row.count)]));
   const activeCount =
     Number(counts.queued ?? 0) + Number(counts.running ?? 0) + Number(counts.awaiting_user ?? 0);
@@ -49,12 +55,18 @@ export default async function JobsPage() {
           <p className="text-muted-foreground text-pretty text-base sm:text-sm">
             Every browser automation task in the shared durable queue.
           </p>
+          <div className="pt-2">
+            <Badge variant={automationEnabled ? 'success' : 'secondary'}>
+              Automation {automationEnabled ? 'running' : 'paused'}
+            </Badge>
+          </div>
         </div>
         <QueueControls
           activeCount={activeCount}
           totalCount={totalCount}
           canStop={ctx.role !== 'viewer'}
           canDelete={ctx.role === 'owner'}
+          automationEnabled={automationEnabled}
         />
       </header>
 

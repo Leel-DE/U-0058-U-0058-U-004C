@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const query = new URLSearchParams({ limit: '100', orgId: ctx.orgId });
   if (after) query.set('after', after);
 
-  const [queueJobs, statusCounts] = await Promise.all([
+  const [queueJobs, statusCounts, settingsRows, nextRunRows] = await Promise.all([
     db()
       .select({
         id: schema.automationJobs.id,
@@ -46,7 +46,27 @@ export async function GET(request: Request) {
       .from(schema.automationJobs)
       .where(eq(schema.automationJobs.orgId, ctx.orgId))
       .groupBy(schema.automationJobs.status),
+    db()
+      .select()
+      .from(schema.automationSettings)
+      .where(eq(schema.automationSettings.orgId, ctx.orgId))
+      .limit(1),
+    db()
+      .select({ nextRunAt: sql<Date | null>`min(${schema.competitorProducts.nextRunAt})` })
+      .from(schema.competitorProducts)
+      .where(
+        and(
+          eq(schema.competitorProducts.orgId, ctx.orgId),
+          eq(schema.competitorProducts.active, true),
+        ),
+      ),
   ]);
+  const automationPolicy = {
+    enabled: settingsRows[0]?.enabled ?? true,
+    competitorIntervalMinutes: settingsRows[0]?.competitorIntervalMinutes ?? 1440,
+    maxConcurrentJobs: settingsRows[0]?.maxConcurrentJobs ?? 1,
+    nextCompetitorRunAt: nextRunRows[0]?.nextRunAt ?? null,
+  };
   const counts = Object.fromEntries(statusCounts.map((row) => [row.status, Number(row.count)]));
   const queue = {
     jobs: queueJobs.map((job) => ({
@@ -78,6 +98,7 @@ export async function GET(request: Request) {
           ok: false,
           message: 'Automation worker is unavailable. Queue data is still current.',
           queue,
+          automationPolicy,
           webProcess: {
             pid: process.pid,
             uptimeSeconds: Math.floor(process.uptime()),
@@ -107,6 +128,7 @@ export async function GET(request: Request) {
       },
       events: events.events,
       queue,
+      automationPolicy,
       webProcess: {
         pid: process.pid,
         uptimeSeconds: Math.floor(process.uptime()),
@@ -119,6 +141,7 @@ export async function GET(request: Request) {
         ok: false,
         message: 'Automation worker is unavailable. Queue data is still current.',
         queue,
+        automationPolicy,
         webProcess: {
           pid: process.pid,
           uptimeSeconds: Math.floor(process.uptime()),

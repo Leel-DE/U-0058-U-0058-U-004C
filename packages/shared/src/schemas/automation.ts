@@ -19,6 +19,16 @@ export const jobStatusSchema = z.enum([
   'cancelled',
 ]);
 
+export const automationSettingsSchema = z.object({
+  enabled: z.boolean(),
+  competitorIntervalMinutes: z
+    .number()
+    .int()
+    .min(60)
+    .max(7 * 24 * 60),
+  maxConcurrentJobs: z.number().int().min(1).max(4),
+});
+
 const basePayloadSchema = z.object({
   inputVersion: z.literal(1),
 });
@@ -89,3 +99,4 @@ export function validateBrowserAutomationPayload(
 export type BrowserAutomationJobType = z.infer<typeof browserAutomationJobTypeSchema>;
 export type BrowserAutomationJob = z.infer<typeof browserAutomationJobSchema>;
 export type ShipmentTrackingPayload = z.infer<typeof shipmentTrackingPayloadSchema>;
+export type AutomationSettingsInput = z.infer<typeof automationSettingsSchema>;

@@ -32,6 +32,7 @@ const REQUIRED_TABLES = [
   'shipment_provider_results',
   'automation_jobs',
   'automation_job_events',
+  'automation_settings',
   'provider_health',
   'notification_deliveries',
   'shipment_update_requests',
@@ -74,6 +75,7 @@ const REQUIRED_RLS_TABLES = [
   'shipments',
   'automation_jobs',
   'automation_job_events',
+  'automation_settings',
   'shipment_events',
   'shipment_provider_results',
   'provider_health',
@@ -95,6 +97,7 @@ const REQUIRED_POLICIES = [
   'shipments_select',
   'automation_jobs_select',
   'automation_job_events_select',
+  'automation_settings_select',
   'shipment_events_select',
   'shipment_provider_results_select',
   'provider_health_select',
@@ -188,6 +191,7 @@ async function main() {
         'my_products.trg_updated_at',
         'scraping_rules.trg_updated_at',
         'selector_repair_attempts.trg_updated_at',
+        'automation_settings.trg_updated_at',
       ]),
     );
 

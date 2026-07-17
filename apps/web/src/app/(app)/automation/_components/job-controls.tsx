@@ -21,12 +21,14 @@ export function QueueControls({
   totalCount,
   canStop,
   canDelete,
+  automationEnabled = true,
   onChanged,
 }: {
   activeCount: number;
   totalCount: number;
   canStop: boolean;
   canDelete: boolean;
+  automationEnabled?: boolean;
   onChanged?: () => void;
 }) {
   const router = useRouter();
@@ -39,16 +41,16 @@ export function QueueControls({
       <div className="flex flex-wrap gap-2">
         {canStop ? (
           <ConfirmationDialog
-            triggerLabel="Stop All Jobs"
-            title="Stop All Jobs"
-            description={`This stops ${activeCount} running, queued, or paused job${activeCount === 1 ? '' : 's'}. Running browser contexts close immediately. Completed history is kept.`}
-            confirmLabel="Stop All Jobs"
-            confirmationText="STOP ALL JOBS"
-            disabled={activeCount === 0}
+            triggerLabel="Pause & Stop All"
+            title="Pause Automation & Stop All Jobs"
+            description={`This pauses scheduled work for this organization and stops ${activeCount} running, queued, or CAPTCHA-paused job${activeCount === 1 ? '' : 's'}. Running browser contexts close immediately. Completed history is kept.`}
+            confirmLabel="Pause & Stop All"
+            confirmationText="PAUSE AUTOMATION"
+            disabled={!automationEnabled && activeCount === 0}
             onConfirm={async () => {
-              const result = await cancelAllAutomationJobs({ confirmation: 'STOP ALL JOBS' });
+              const result = await cancelAllAutomationJobs({ confirmation: 'PAUSE AUTOMATION' });
               actionData(result);
-              toast('All active jobs stopped');
+              toast('Automation paused and active jobs stopped');
               refresh();
             }}
           />
@@ -74,6 +76,11 @@ export function QueueControls({
       {canDelete && activeCount > 0 ? (
         <p className="text-muted-foreground text-pretty text-base sm:text-sm">
           Stop active jobs before deleting job history.
+        </p>
+      ) : null}
+      {!automationEnabled ? (
+        <p className="text-muted-foreground text-pretty text-base sm:text-sm">
+          Scheduled automation is paused for this organization.
         </p>
       ) : null}
     </div>

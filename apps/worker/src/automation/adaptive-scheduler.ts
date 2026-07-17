@@ -21,9 +21,17 @@ export class AdaptiveScheduler {
 
   async enqueueDueShipments(limit = 25) {
     const now = new Date().toISOString();
+    const { data: enabledSettings, error: settingsError } = await this.client
+      .from('automation_settings')
+      .select('org_id')
+      .eq('enabled', true);
+    if (settingsError) throw settingsError;
+    const enabledOrgIds = (enabledSettings ?? []).map((settings) => settings.org_id);
+    if (enabledOrgIds.length === 0) return 0;
     const { data, error } = await this.client
       .from('shipments')
       .select('id, org_id, tracking_number')
+      .in('org_id', enabledOrgIds)
       .eq('tracking_enabled', true)
       .lte('next_check_at', now)
       .order('next_check_at', { ascending: true })

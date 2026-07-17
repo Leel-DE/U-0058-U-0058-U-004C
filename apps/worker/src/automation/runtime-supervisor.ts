@@ -42,7 +42,7 @@ export class RuntimeSupervisor {
   private ticking = false;
   private readonly concurrency = Math.max(
     1,
-    Math.min(4, Number(process.env.AUTOMATION_CONCURRENCY ?? 1)),
+    Math.min(4, Number(process.env.AUTOMATION_CONCURRENCY ?? 4)),
   );
   private readonly pollMs = Math.max(1_000, Number(process.env.AUTOMATION_QUEUE_POLL_MS ?? 3_000));
 

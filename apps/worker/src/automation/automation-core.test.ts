@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  automationSettingsSchema,
   shipmentTrackingPayloadSchema,
   validateBrowserAutomationPayload,
   type BrowserAutomationJob,
@@ -9,6 +10,7 @@ import { ReportBuilder, RetryManager } from './services.js';
 import { assertPublicHttpUrl } from './url-policy.js';
 import { shipmentAdapters } from './shipment-adapters.js';
 import { BrowserJobExecutor } from './browser-job-executor.js';
+import { CompetitionResultStore } from './competition-result-store.js';
 import type { BrowserContextManager } from './browser-context-manager.js';
 
 describe('strict browser job envelope', () => {
@@ -49,6 +51,23 @@ describe('strict browser job envelope', () => {
 });
 
 describe('adaptive scheduling', () => {
+  it('bounds organization browser capacity and competitor cadence', () => {
+    expect(
+      automationSettingsSchema.safeParse({
+        enabled: true,
+        competitorIntervalMinutes: 60,
+        maxConcurrentJobs: 4,
+      }).success,
+    ).toBe(true);
+    expect(
+      automationSettingsSchema.safeParse({
+        enabled: true,
+        competitorIntervalMinutes: 30,
+        maxConcurrentJobs: 8,
+      }).success,
+    ).toBe(false);
+  });
+
   it('checks out-for-delivery parcels more frequently than registered parcels', () => {
     expect(nextShipmentCheck('out_for_delivery').minutes).toBeLessThan(
       nextShipmentCheck('info_received').minutes,
@@ -58,6 +77,52 @@ describe('adaptive scheduling', () => {
   it('stops hot-looping terminal statuses', () => {
     expect(nextShipmentCheck('delivered').minutes).toBe(10_080);
     expect(nextShipmentCheck('returned').minutes).toBe(10_080);
+  });
+
+  it('moves a competitor product to the organization interval after a final result', async () => {
+    const update = vi.fn((_values: { next_run_at: string }) => ({
+      eq: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })),
+    }));
+    const client = {
+      from: vi.fn((table: string) => {
+        if (table === 'automation_settings') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(async () => ({
+                  data: { competitor_interval_minutes: 360 },
+                  error: null,
+                })),
+              })),
+            })),
+          };
+        }
+        if (table === 'competitor_products') return { update };
+        throw new Error(`unexpected table: ${table}`);
+      }),
+    };
+    const now = Date.now();
+    const job: BrowserAutomationJob = {
+      id: crypto.randomUUID(),
+      orgId: crypto.randomUUID(),
+      type: 'competitor_scrape',
+      priority: 'normal',
+      status: 'running',
+      payload: {
+        inputVersion: 1,
+        competitorProductId: crypto.randomUUID(),
+      },
+      attemptCount: 3,
+      maxAttempts: 3,
+      leaseToken: crypto.randomUUID(),
+      inputVersion: 1,
+    };
+
+    await new CompetitionResultStore(client as never).record(job, false);
+
+    const scheduled = new Date(update.mock.calls[0]![0].next_run_at).getTime();
+    expect(scheduled).toBeGreaterThanOrEqual(now + 360 * 60_000);
+    expect(scheduled).toBeLessThan(now + 361 * 60_000);
   });
 });
 

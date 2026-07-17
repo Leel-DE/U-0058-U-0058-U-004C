@@ -4,7 +4,7 @@
 
 - Queue contracts: `packages/shared/src/schemas/automation.ts`
 - Queue and shipment schema: `packages/db/src/schema/automation.ts`
-- Atomic queue SQL: `packages/db/sql/0014_automation_hub.sql`
+- Atomic queue SQL: `packages/db/sql/0014_automation_hub.sql` and organization policy controls in `0015_automation_controls.sql`
 - Runtime supervisor: `apps/worker/src/automation/runtime-supervisor.ts`
 - Browser execution allowlist: `apps/worker/src/automation/browser-job-executor.ts`
 - Shipment workflow: `apps/worker/src/automation/shipment-handler.ts`
@@ -28,12 +28,16 @@
 10. Cancelling a running job updates durable state and aborts its isolated Playwright context; deleting job history is limited to terminal jobs.
 11. Bulk stop and delete operations are organization-scoped. Bulk deletion is blocked while active jobs remain.
 12. Deleting a monitored store or product cancels jobs that reference it before database cascades remove dependent records.
+13. `automation_settings` is the organization-scoped source of truth for running/paused state, competitor interval, and maximum parallel jobs.
+14. Pausing must persist the policy before cancelling active jobs. Inngest dispatch, the shipment scheduler, and SQL job claims must all honor the paused policy so jobs cannot be recreated or claimed.
+15. The SQL claim function enforces per-organization concurrency; `AUTOMATION_CONCURRENCY` is only the process-wide safety ceiling.
 
 ## Operations controls
 
 - `/automation` is the live operations surface for web, worker, Playwright, and TorqueCore bridge process state plus the organization queue.
 - `/jobs` owns queue-wide stop/delete controls and per-job stop/delete controls.
-- Owner-only destructive controls use explicit consequence copy; stopping all jobs requires `STOP ALL JOBS`, deleting history requires `DELETE ALL JOBS`, and deleting a competitor site requires its exact name.
+- Owner-only destructive controls use explicit consequence copy; pausing and stopping all jobs requires `PAUSE AUTOMATION`, deleting history requires `DELETE ALL JOBS`, and deleting a competitor site requires its exact name.
+- `/automation` owns the selected organization's running/paused state, shared competitor interval, and parallel browser worker limit. Switching organizations does not alter the previous organization's policy.
 - Worker events and active-job details must always be filtered by organization before returning them to the web client.
 
 ## Narrow validation

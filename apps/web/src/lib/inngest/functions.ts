@@ -1,8 +1,17 @@
-import { and, eq, lte } from 'drizzle-orm';
+import { and, eq, lte, sql } from 'drizzle-orm';
 import { inngest } from './client';
 import { db, schema } from '@/lib/db';
 import { evaluateNoChangeAlerts } from '@/server/alerts/evaluate';
 import { randomUUID } from 'node:crypto';
+
+async function automationEnabled(orgId: string) {
+  const rows = await db()
+    .select({ enabled: schema.automationSettings.enabled })
+    .from(schema.automationSettings)
+    .where(eq(schema.automationSettings.orgId, orgId))
+    .limit(1);
+  return rows[0]?.enabled ?? true;
+}
 
 /**
  * Cron: every 5 minutes, look up products whose next_run_at is in the past
@@ -21,11 +30,16 @@ export const scheduleScraping = inngest.createFunction(
         })
         .from(schema.competitorProducts)
         .innerJoin(schema.stores, eq(schema.stores.id, schema.competitorProducts.storeId))
+        .leftJoin(
+          schema.automationSettings,
+          eq(schema.automationSettings.orgId, schema.competitorProducts.orgId),
+        )
         .where(
           and(
             eq(schema.competitorProducts.active, true),
             eq(schema.stores.status, 'active'),
             lte(schema.competitorProducts.nextRunAt, new Date()),
+            sql`coalesce(${schema.automationSettings.enabled}, true)`,
           ),
         );
       return rows;
@@ -58,6 +72,9 @@ export const scrapeStore = inngest.createFunction(
   { event: 'store.scrape.requested' },
   async ({ event, step }) => {
     const { orgId, storeId, runId } = event.data;
+
+    const enabled = await step.run('check-automation-policy', () => automationEnabled(orgId));
+    if (!enabled) return { skipped: 'automation_paused' };
 
     const store = await step.run('load-store', async () => {
       const rows = await db()
@@ -121,6 +138,8 @@ export const scrapeProduct = inngest.createFunction(
   { event: 'product.scrape.requested' },
   async ({ event, step }) => {
     const { orgId, competitorProductId, runId } = event.data;
+    const enabled = await step.run('check-automation-policy', () => automationEnabled(orgId));
+    if (!enabled) return { skipped: 'automation_paused' };
     const result = await step.run('queue-browser-job', async () => {
       const [job] = await db()
         .insert(schema.automationJobs)
