@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ORG_ROLES } from '../constants';
+import { ORG_ROLES } from '../constants.js';
 
 export const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 

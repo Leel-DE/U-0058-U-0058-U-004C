@@ -13,4 +13,5 @@ export * from './ai';
 export * from './discovery';
 export * from './analytics';
 export * from './operations';
+export * from './automation';
 export * from './relations';

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ALERT_TYPES, NOTIF_CHANNELS } from '../constants';
+import { ALERT_TYPES, NOTIF_CHANNELS } from '../constants.js';
 
 export const alertParamsSchema = z
   .object({

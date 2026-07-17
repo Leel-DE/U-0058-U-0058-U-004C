@@ -81,12 +81,14 @@ begin
   for t in select unnest(array[
     'organizations','stores','my_products','scraping_rules','selector_repair_attempts'
   ]) loop
-    execute format(
-      'drop trigger if exists trg_updated_at on %I;
-       create trigger trg_updated_at before update on %I
-       for each row execute function public.set_updated_at();',
-      t, t
-    );
+    if to_regclass('public.' || t) is not null then
+      execute format(
+        'drop trigger if exists trg_updated_at on %I;
+         create trigger trg_updated_at before update on %I
+         for each row execute function public.set_updated_at();',
+        t, t
+      );
+    end if;
   end loop;
 end $$;
 
