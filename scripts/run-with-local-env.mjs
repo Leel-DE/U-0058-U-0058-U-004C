@@ -26,22 +26,44 @@ const localEnv = parseEnvFile(path.join(root, '.env.local'));
 const env = { ...process.env, ...localEnv };
 const [command, ...commandArgs] = args;
 const localBin = path.join(root, 'node_modules', '.bin');
-env.PATH = `${localBin}${path.delimiter}${env.PATH ?? ''}`;
+const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'PATH';
+env[pathKey] = `${localBin}${path.delimiter}${env[pathKey] ?? ''}`;
 
-function resolveCommand(name) {
-  if (process.platform !== 'win32') return name;
-  if (name === 'pnpm') return 'pnpm.cmd';
+function resolveCommand(name, commandArgs) {
+  if (process.platform !== 'win32') {
+    return { command: name, args: commandArgs, shell: false };
+  }
+  if (name === 'pnpm') {
+    const pnpmEntry = path.join(
+      process.env.APPDATA ?? '',
+      'npm',
+      'node_modules',
+      'pnpm',
+      'bin',
+      'pnpm.cjs',
+    );
+    if (existsSync(pnpmEntry)) {
+      return {
+        command: process.execPath,
+        args: [pnpmEntry, ...commandArgs],
+        shell: false,
+      };
+    }
+  }
   const localCmd = path.join(localBin, `${name}.CMD`);
-  if (existsSync(localCmd)) return localCmd;
-  return name;
+  return {
+    command: existsSync(localCmd) ? localCmd : name,
+    args: commandArgs,
+    shell: true,
+  };
 }
 
-const resolved = resolveCommand(command);
+const resolved = resolveCommand(command, commandArgs);
 
-const result = spawnSync(resolved, commandArgs, {
+const result = spawnSync(resolved.command, resolved.args, {
   cwd: root,
   stdio: 'inherit',
-  shell: process.platform === 'win32',
+  shell: resolved.shell,
   env,
 });
 

@@ -18,8 +18,21 @@ Next.js web / Server Actions
 - `packages/shared` owns cross-process contracts. New job types should start there rather than defining unrelated request shapes in each service.
 - `packages/db` is the schema source of truth. Raw SQL layers add RLS, views, storage, and operational helpers.
 
-## Target direction requested 2026-07-17
+## Local automation core
 
-Competition Radar should become the local browser-automation host. Shipment tracking should be a whitelisted job handler, not arbitrary remote code. A future desktop/tray shell should supervise services and expose health/events without console windows. TorqueCore remains a data consumer and remote source of shipment jobs/results.
+Competition Radar is the local browser-automation host:
 
-This target is not implemented yet. Update this file after the runtime, contracts, and deployment path are verified.
+    TorqueCore admin
+      -> TorqueCore Supabase shipment_tracking_runs queue
+      -> Radar shipment monitor (Realtime wake-up + 5 s reconciliation)
+      -> atomic queued -> running claim
+      -> sequential headed/off-screen Chrome checks
+      -> bounded evidence -> OpenAI presentation -> Telegram
+      -> result stored back in TorqueCore Supabase
+
+- apps/worker/src/shipments is the whitelisted shipment handler. It cannot execute arbitrary URLs or remote code.
+- Manual and six-hour scheduled checks share the durable TorqueCore queue. Running jobs older than 20 minutes are recovered.
+- CAPTCHA is recorded and skipped; tariff/paywall, blocked, irrelevant, and timeout results never become evidence.
+- Canonical TorqueCore shipment fields remain unchanged; the browser result is isolated evaluation data.
+- apps/desktop is the Windows tray supervisor. It owns web, worker, and Inngest child processes, hides consoles, restarts failed services, and polls safe automation events.
+- /automation is the authenticated operator surface. Worker /automation/status and /automation/events require WORKER_SHARED_SECRET.

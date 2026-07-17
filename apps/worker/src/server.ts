@@ -53,6 +53,7 @@ import {
 import { analyzeStore } from './discovery/store-analyzer.js';
 import { runProductSelectorRepair } from './repair/selector-repair-runner.js';
 import { selectorRepairRequestSchema } from './repair/selector-repair-types.js';
+import { shipmentTrackingMonitor } from './shipments/monitor.js';
 
 const logger = pino({ name: 'cr-worker', level: process.env.LOG_LEVEL ?? 'info' });
 const PORT = Number(process.env.PORT ?? 4000);
@@ -266,8 +267,27 @@ app.get('/health', async () => ({
   mode: process.env.LOCAL_DEV_MODE === 'true' ? 'local' : 'standard',
   ai: { ...aiStatus(), cache: aiCacheStats() },
   resources: { memory: process.memoryUsage(), browser: browserPoolStats() },
+  automation: shipmentTrackingMonitor.health(),
   ts: new Date().toISOString(),
 }));
+
+app.get('/automation/status', async () => ({
+  ok: true,
+  shipmentTracking: shipmentTrackingMonitor.status(),
+}));
+
+app.get('/automation/events', async (req) => {
+  const query = z
+    .object({
+      after: z.string().uuid().optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(100),
+    })
+    .parse(req.query);
+  return {
+    ok: true,
+    events: shipmentTrackingMonitor.events(query),
+  };
+});
 
 app.get('/health/resources', async () => ({
   ok: true,
@@ -1190,6 +1210,7 @@ const shutdown = async () => {
   logger.info('shutting down');
   try {
     stopSessionCleanup();
+    await shipmentTrackingMonitor.stop();
     await app.close();
   } finally {
     await closePlaywright();
@@ -1209,6 +1230,7 @@ app
       logger.info({ rehydrated }, 'restored persisted manual storage states');
     }
     startSessionCleanup();
+    await shipmentTrackingMonitor.start();
   })
   .catch((err) => {
     logger.error(err);

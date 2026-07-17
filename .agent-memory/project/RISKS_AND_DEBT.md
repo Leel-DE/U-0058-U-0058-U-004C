@@ -2,8 +2,8 @@
 
 | Risk | Evidence | Consequence | Direction |
 | --- | --- | --- | --- |
-| No desktop supervisor | Root `dev` uses `concurrently`; no Electron/Tauri/service/tray package exists | visible consoles, manual startup, weak process recovery | add a single desktop/tray host with explicit service health and lifecycle |
-| No generic durable local job contract | worker is HTTP request-driven; Inngest events are competitor-specific | shipment logic could become a second ad-hoc poller | introduce whitelisted job types, attempts, leases, and event logs |
+| Automation event history is in memory | apps/worker/src/automation/events.ts keeps the latest 200 events | worker restart clears the Radar event timeline | persist events if cross-restart audit history becomes necessary; TorqueCore run history remains durable |
+| Shipment queue is integration-specific | TorqueCore owns the durable table; other future automation types do not yet share a generic queue | a second integration could duplicate monitor lifecycle code | extract the proven claim/recovery/event lifecycle only when another job type is added |
 | Standard Playwright is always headless | `apps/worker/src/fetcher/playwright.ts` | trackers that block headless sessions lose evidence | support per-handler browser profiles; shipment tracking requires headed minimized/off-screen Chrome |
 | Heartbeat is demand-driven | `checkWorkerHealth` writes heartbeat only when health is loaded | stale health can appear current | worker-owned periodic heartbeat or desktop host heartbeat |
 | Production and local topology differ | Vercel/Inngest/Fly/Supabase versus local Docker and three Node processes | environment drift and confusing ownership | make runtime mode explicit and keep integration adapters separate |

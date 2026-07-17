@@ -19,3 +19,12 @@
 - desktop supervisor: start, stop, duplicate-start, crash recovery, tray behavior, hidden-console check, and service health.
 
 Use `pnpm.cmd` rather than `pnpm` from Windows PowerShell.
+
+## Automation core verified 2026-07-17
+
+- pnpm.cmd typecheck: successful.
+- pnpm.cmd test: 30 worker files / 135 worker tests plus all web/shared tests successful.
+- pnpm.cmd build: worker TypeScript and Next.js production build successful; /automation and /api/automation present.
+- Real run d23d93e3-1f3e-4d71-bf95-4a444191cac7: partial, two verified sources, OpenAI presentation generated, Telegram delivered, result persisted to TorqueCore.
+- Playwright CLI: authenticated /automation rendered at desktop and 390x844; the only observed 503 responses occurred during an intentional worker restart and recovered automatically.
+- Windows runtime: Competition Radar Automation scheduled task enabled; old TorqueCore shipment tray/worker tasks disabled; ports 3000, 4000, and 8288 owned by the Electron-supervised tree.

@@ -52,6 +52,7 @@ export async function updateSession(request: NextRequest) {
     url.pathname.startsWith('/matches') ||
     url.pathname.startsWith('/alerts') ||
     url.pathname.startsWith('/jobs') ||
+    url.pathname.startsWith('/automation') ||
     url.pathname.startsWith('/analytics') ||
     url.pathname.startsWith('/exports') ||
     url.pathname.startsWith('/settings') ||
