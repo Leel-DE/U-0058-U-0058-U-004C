@@ -8,6 +8,7 @@ import { getContext } from '@/lib/auth';
 import { db, schema } from '@/lib/db';
 import { timeAgo } from '@/lib/utils';
 import { Plus } from 'lucide-react';
+import { DeleteStoreControl } from '@/components/entity-delete-controls';
 
 export default async function CompetitorDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -33,16 +34,18 @@ export default async function CompetitorDetail({ params }: { params: Promise<{ i
     .limit(5);
 
   const canManage = ctx.role !== 'viewer';
+  const canDelete = ctx.role === 'owner';
+  const monitoredProductCount = Number(productCount[0]?.count ?? 0);
 
   return (
     <div className="space-y-6">
       <header className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{store.name}</h1>
-          <p className="text-sm text-muted-foreground">{store.domain}</p>
+          <p className="text-muted-foreground text-sm">{store.domain}</p>
         </div>
         {canManage ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <Button asChild variant="outline">
               <Link href={`/competitors/${store.id}/discovery`}>Site discovery</Link>
             </Button>
@@ -54,26 +57,43 @@ export default async function CompetitorDetail({ params }: { params: Promise<{ i
                 <Plus className="mr-1 h-4 w-4" /> Add product
               </Link>
             </Button>
+            {canDelete ? (
+              <DeleteStoreControl
+                storeId={store.id}
+                storeName={store.name}
+                productCount={monitoredProductCount}
+              />
+            ) : null}
           </div>
         ) : null}
       </header>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader><CardTitle>Store health</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Store health</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <Row label="Status">
-              <Badge variant={store.status === 'active' ? 'success' : 'destructive'}>{store.status}</Badge>
+              <Badge variant={store.status === 'active' ? 'success' : 'destructive'}>
+                {store.status}
+              </Badge>
             </Row>
             <Row label="Last successful scrape">{timeAgo(store.lastSuccessfulScrapeAt)}</Row>
-            <Row label="Error rate (24h)">{store.errorRate24h ? `${(Number(store.errorRate24h) * 100).toFixed(1)}%` : '—'}</Row>
-            <Row label="Avg response">{store.avgResponseMs ? `${store.avgResponseMs} ms` : '—'}</Row>
+            <Row label="Error rate (24h)">
+              {store.errorRate24h ? `${(Number(store.errorRate24h) * 100).toFixed(1)}%` : '—'}
+            </Row>
+            <Row label="Avg response">
+              {store.avgResponseMs ? `${store.avgResponseMs} ms` : '—'}
+            </Row>
             <Row label="robots.txt">{store.robotsTxtStatus ?? 'not checked'}</Row>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Configuration</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Configuration</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <Row label="Country">{store.countryCode}</Row>
             <Row label="Currency">{store.currency}</Row>
@@ -85,9 +105,11 @@ export default async function CompetitorDetail({ params }: { params: Promise<{ i
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Products monitored</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Products monitored</CardTitle>
+          </CardHeader>
           <CardContent>
-            <div className="text-4xl font-semibold tabular-nums">{productCount[0]?.count ?? 0}</div>
+            <div className="text-4xl font-semibold tabular-nums">{monitoredProductCount}</div>
             <Button asChild variant="link" className="mt-2 px-0">
               <Link href={`/products?store=${store.id}`}>View products →</Link>
             </Button>
@@ -96,13 +118,15 @@ export default async function CompetitorDetail({ params }: { params: Promise<{ i
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Recent scrape runs</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Recent scrape runs</CardTitle>
+        </CardHeader>
         <CardContent>
           {recentRuns.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No runs yet.</p>
+            <p className="text-muted-foreground text-sm">No runs yet.</p>
           ) : (
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-muted-foreground">
+              <thead className="text-muted-foreground text-left text-xs uppercase">
                 <tr>
                   <th className="py-2">When</th>
                   <th className="py-2">Status</th>
@@ -115,14 +139,22 @@ export default async function CompetitorDetail({ params }: { params: Promise<{ i
                   <tr key={r.id} className="border-t">
                     <td className="py-2">{timeAgo(r.createdAt)}</td>
                     <td className="py-2">
-                      <Badge variant={r.status === 'success' ? 'success' : r.status === 'failed' ? 'destructive' : 'secondary'}>
+                      <Badge
+                        variant={
+                          r.status === 'success'
+                            ? 'success'
+                            : r.status === 'failed'
+                              ? 'destructive'
+                              : 'secondary'
+                        }
+                      >
                         {r.status}
                       </Badge>
                     </td>
-                    <td className="py-2 text-muted-foreground">
+                    <td className="text-muted-foreground py-2">
                       {r.productsOk}/{r.productsTotal} ok
                     </td>
-                    <td className="py-2 text-muted-foreground">{r.triggeredBy}</td>
+                    <td className="text-muted-foreground py-2">{r.triggeredBy}</td>
                   </tr>
                 ))}
               </tbody>

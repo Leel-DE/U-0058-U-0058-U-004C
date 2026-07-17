@@ -181,10 +181,15 @@ export async function runScrapeForProduct(input: RunInput): Promise<RunOutput> {
       product: schema.competitorProducts,
       store: schema.stores,
       rules: schema.scrapingRules,
+      automationSettings: schema.automationSettings,
     })
     .from(schema.competitorProducts)
     .innerJoin(schema.stores, eq(schema.stores.id, schema.competitorProducts.storeId))
     .leftJoin(schema.scrapingRules, eq(schema.scrapingRules.storeId, schema.stores.id))
+    .leftJoin(
+      schema.automationSettings,
+      eq(schema.automationSettings.orgId, schema.competitorProducts.orgId),
+    )
     .where(
       and(
         eq(schema.competitorProducts.id, input.competitorProductId),
@@ -195,7 +200,7 @@ export async function runScrapeForProduct(input: RunInput): Promise<RunOutput> {
 
   const ctx = rows[0];
   if (!ctx) return { ok: false, errorCode: 'not_found', snapshotInserted: false };
-  const { product, store, rules } = ctx;
+  const { product, store, rules, automationSettings } = ctx;
 
   const strategy =
     input.strategy ?? (store.jsRequired ? 'playwright' : 'auto');
@@ -461,6 +466,9 @@ export async function runScrapeForProduct(input: RunInput): Promise<RunOutput> {
   }
 
   // refresh product summary fields + reset failure counter
+  const competitorIntervalMinutes =
+    automationSettings?.competitorIntervalMinutes ?? store.crawlFrequencyMinutes;
+
   await db()
     .update(schema.competitorProducts)
     .set({
@@ -472,7 +480,7 @@ export async function runScrapeForProduct(input: RunInput): Promise<RunOutput> {
       title: data.title ?? product.title,
       imageUrl: data.image ?? product.imageUrl,
       selectorFailureCount: 0,
-      nextRunAt: new Date(fetchedAt.getTime() + store.crawlFrequencyMinutes * 60_000),
+      nextRunAt: new Date(fetchedAt.getTime() + competitorIntervalMinutes * 60_000),
     })
     .where(eq(schema.competitorProducts.id, product.id));
 

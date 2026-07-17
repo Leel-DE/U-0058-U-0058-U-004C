@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { getUser, getUserOrgs } from '@/lib/auth';
 import { OnboardingForm } from './onboarding-form';
 
-export const metadata = { title: 'Create organization — Competitor Radar' };
+export const metadata = { title: 'Создание организации' };
 
 export default async function OnboardingPage() {
   const user = await getUser();

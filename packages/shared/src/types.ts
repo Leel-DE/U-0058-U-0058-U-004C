@@ -6,12 +6,10 @@ import type {
   NotifChannel,
   ScrapeStrategy,
   SnapshotStatus,
-} from './constants';
+} from './constants.js';
 
 /** Result-style discriminated union used across server actions. */
-export type Result<T, E = ActionError> =
-  | { ok: true; data: T }
-  | { ok: false; error: E };
+export type Result<T, E = ActionError> = { ok: true; data: T } | { ok: false; error: E };
 
 export type ActionErrorCode =
   | 'validation'

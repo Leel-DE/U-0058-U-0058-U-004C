@@ -8,6 +8,10 @@ import { db, schema } from '@/lib/db';
 import { defineAction } from '@/lib/action';
 import { logAudit } from '@/lib/audit';
 import { recordSelectorVersions } from '@/server/selectors/versioning';
+import {
+  cancelJobsForPayloadReference,
+  cancelJobsForPayloadReferences,
+} from '@/server/automation/control';
 
 export const createStore = defineAction(
   schemas.createStoreSchema,
@@ -181,18 +185,41 @@ const deleteSchema = z.object({ id: z.string().uuid() });
 export const deleteStore = defineAction(
   deleteSchema,
   async ({ id }, ctx) => {
-    await db()
+    const products = await db()
+      .select({ id: schema.competitorProducts.id })
+      .from(schema.competitorProducts)
+      .where(
+        and(
+          eq(schema.competitorProducts.storeId, id),
+          eq(schema.competitorProducts.orgId, ctx.orgId),
+        ),
+      );
+    await Promise.all([
+      cancelJobsForPayloadReference({ orgId: ctx.orgId, field: 'storeId', value: id }),
+      cancelJobsForPayloadReferences({
+        orgId: ctx.orgId,
+        field: 'competitorProductId',
+        values: products.map((product) => product.id),
+      }),
+    ]);
+    const deleted = await db()
       .delete(schema.stores)
-      .where(and(eq(schema.stores.id, id), eq(schema.stores.orgId, ctx.orgId)));
-    await logAudit({
-      orgId: ctx.orgId,
-      userId: ctx.user.id,
-      action: 'store.delete',
-      entity: 'store',
-      entityId: id,
-    });
+      .where(and(eq(schema.stores.id, id), eq(schema.stores.orgId, ctx.orgId)))
+      .returning({ id: schema.stores.id, name: schema.stores.name, domain: schema.stores.domain });
+    if (deleted[0]) {
+      await logAudit({
+        orgId: ctx.orgId,
+        userId: ctx.user.id,
+        action: 'store.delete',
+        entity: 'store',
+        entityId: id,
+        before: { name: deleted[0].name, domain: deleted[0].domain },
+      });
+    }
     revalidatePath('/competitors');
-    return { ok: true as const };
+    revalidatePath('/products');
+    revalidatePath('/jobs');
+    return { deleted: deleted.length };
   },
   { roles: ['owner'] },
 );

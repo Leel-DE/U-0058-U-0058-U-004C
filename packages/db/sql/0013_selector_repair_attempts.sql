@@ -27,3 +27,8 @@ create index if not exists selector_repair_attempts_competitor_idx on selector_r
 create index if not exists selector_repair_attempts_product_idx on selector_repair_attempts(product_id);
 create index if not exists selector_repair_attempts_status_idx on selector_repair_attempts(status);
 create index if not exists selector_repair_attempts_created_idx on selector_repair_attempts(created_at);
+
+drop trigger if exists trg_updated_at on selector_repair_attempts;
+create trigger trg_updated_at
+before update on selector_repair_attempts
+for each row execute function public.set_updated_at();

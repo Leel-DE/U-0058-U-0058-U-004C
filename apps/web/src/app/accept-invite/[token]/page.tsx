@@ -5,11 +5,7 @@ import { Button } from '@/components/ui/button';
 import { getUser } from '@/lib/auth';
 import { AcceptForm } from './accept-form';
 
-export default async function AcceptInvitePage({
-  params,
-}: {
-  params: Promise<{ token: string }>;
-}) {
+export default async function AcceptInvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const user = await getUser();
   if (!user) redirect(`/login?next=/accept-invite/${token}`);
@@ -20,7 +16,7 @@ export default async function AcceptInvitePage({
         <CardHeader>
           <CardTitle>You&apos;ve been invited</CardTitle>
           <CardDescription>
-            Accept the invitation to join the organization in Competitor Radar.
+            Accept the invitation to join the organization in Automation Hub.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

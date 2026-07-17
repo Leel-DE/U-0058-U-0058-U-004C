@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { SCRAPE_STRATEGY, SNAPSHOT_STATUS, SUPPORTED_CURRENCIES, AVAILABILITY } from '../constants';
+import {
+  SCRAPE_STRATEGY,
+  SNAPSHOT_STATUS,
+  SUPPORTED_CURRENCIES,
+  AVAILABILITY,
+} from '../constants.js';
 
 export const extractedProductSchema = z.object({
   title: z.string().min(1).max(1000).optional(),
@@ -51,7 +56,9 @@ export const scrapeResponseOkSchema = z.object({
     confidence: z.number().min(0).max(1),
     fieldConfidence: z.record(z.number().min(0).max(1)).optional(),
   }),
-  raw: z.object({ htmlSnippet: z.string().optional(), screenshotBase64: z.string().optional() }).optional(),
+  raw: z
+    .object({ htmlSnippet: z.string().optional(), screenshotBase64: z.string().optional() })
+    .optional(),
 });
 
 export const scrapeResponseErrSchema = z.object({
@@ -64,7 +71,9 @@ export const scrapeResponseErrSchema = z.object({
     durationMs: z.number(),
     robotsAllowed: z.boolean().optional(),
   }),
-  raw: z.object({ htmlSnippet: z.string().optional(), screenshotBase64: z.string().optional() }).optional(),
+  raw: z
+    .object({ htmlSnippet: z.string().optional(), screenshotBase64: z.string().optional() })
+    .optional(),
 });
 
 export const scrapeResponseSchema = z.discriminatedUnion('ok', [

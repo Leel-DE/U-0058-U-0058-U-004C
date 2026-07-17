@@ -1,64 +1,146 @@
 {
-  "version": 1,
+  "version": 2,
   "updated_at": "2026-07-17",
   "project": {
-    "name": "Competitor Radar",
+    "name": "Competition Radar Automation Hub",
     "root": "D:/Apps/XXL",
-    "purpose": "Local-first competitor monitoring with a Next.js control plane, Fastify scraping worker, Inngest orchestration, and Supabase/Postgres persistence."
+    "purpose": "Local-first automation control plane for competitor intelligence and shipment tracking with one durable queue, one shared Playwright runtime, and Supabase/Postgres persistence."
   },
   "subsystems": [
     {
       "id": "web-control-plane",
       "source_of_truth": "apps/web",
-      "entry_points": ["apps/web/src/app", "apps/web/src/server/actions", "apps/web/src/lib/inngest/functions.ts"],
+      "entry_points": [
+        "apps/web/src/app",
+        "apps/web/src/server/actions",
+        "apps/web/src/server/automation",
+        "apps/web/src/lib/inngest/functions.ts"
+      ],
       "dependencies": ["Next.js 15", "React 19", "Drizzle", "Supabase Auth", "Inngest"],
-      "validation": ["pnpm.cmd --filter @cr/web typecheck", "pnpm.cmd --filter @cr/web test"]
+      "validation": [
+        "pnpm.cmd --filter @cr/web typecheck",
+        "pnpm.cmd --filter @cr/web test",
+        "pnpm.cmd --filter @cr/web build"
+      ]
+    },
+    {
+      "id": "automation-runtime",
+      "source_of_truth": "apps/worker/src/automation",
+      "entry_points": [
+        "apps/worker/src/server.ts",
+        "apps/worker/src/automation/runtime-supervisor.ts",
+        "apps/worker/src/automation/browser-job-executor.ts",
+        "apps/worker/src/automation/torquecore-bridge.ts"
+      ],
+      "dependencies": [
+        "Fastify",
+        "Playwright",
+        "Supabase service role",
+        "OpenAI optional",
+        "Telegram optional"
+      ],
+      "validation": [
+        "pnpm.cmd --filter @cr/worker typecheck",
+        "pnpm.cmd --filter @cr/worker test",
+        "real durable-queue shipment and competition runs"
+      ]
     },
     {
       "id": "scraper-worker",
-      "source_of_truth": "apps/worker/src/server.ts",
-      "entry_points": ["apps/worker/src/server.ts", "apps/worker/src/fetcher/playwright.ts", "apps/worker/src/manual/browser-session-manager.ts"],
-      "dependencies": ["Fastify", "Playwright", "Cheerio", "Pino", "Gemini optional"],
+      "source_of_truth": "apps/worker/src",
+      "entry_points": [
+        "apps/worker/src/server.ts",
+        "apps/worker/src/fetcher/playwright.ts",
+        "apps/worker/src/automation/competition-handlers.ts"
+      ],
+      "dependencies": [
+        "shared BrowserLauncher",
+        "Cheerio",
+        "robots policy",
+        "URL/DNS safety policy"
+      ],
       "validation": ["pnpm.cmd --filter @cr/worker typecheck", "pnpm.cmd --filter @cr/worker test"]
     },
     {
       "id": "database",
       "source_of_truth": "packages/db/src/schema",
-      "entry_points": ["packages/db/src/schema/index.ts", "packages/db/src/apply-sql.ts", "packages/db/src/verify-schema.ts"],
+      "entry_points": [
+        "packages/db/src/schema/automation.ts",
+        "packages/db/src/migrate.ts",
+        "packages/db/src/apply-raw-sql.ts",
+        "packages/db/src/verify-schema.ts"
+      ],
       "dependencies": ["Postgres", "Drizzle", "Supabase RLS/Auth/Storage"],
-      "validation": ["pnpm.cmd db:verify", "pnpm.cmd typecheck"]
+      "validation": ["pnpm.cmd db:migrate", "pnpm.cmd db:verify"]
     },
     {
       "id": "shared-contracts",
-      "source_of_truth": "packages/shared/src",
-      "entry_points": ["packages/shared/src/schemas", "packages/shared/src/types.ts"],
-      "dependencies": ["Zod"],
+      "source_of_truth": "packages/shared/src/schemas/automation.ts",
+      "entry_points": ["packages/shared/src/schemas/automation.ts", "packages/shared/src/index.ts"],
+      "dependencies": ["Zod strict allowlists and versioned payloads"],
       "validation": ["pnpm.cmd --filter @cr/shared typecheck", "pnpm.cmd --filter @cr/shared test"]
     },
     {
       "id": "local-runtime",
-      "source_of_truth": "apps/desktop and scripts",
-      "entry_points": ["apps/desktop/src/main.mjs", "scripts/setup-local.mjs", "scripts/run-with-local-env.mjs", "package.json#dev:desktop"],
-      "dependencies": ["Electron", "Docker Desktop", "local Supabase", "Next.js", "Fastify worker", "Inngest dev server"],
-      "validation": ["GET http://localhost:3000/automation", "GET http://localhost:4000/health", "Windows scheduled task Competition Radar Automation", "pnpm.cmd test"]
+      "source_of_truth": "apps/desktop",
+      "entry_points": [
+        "apps/desktop/src/main.mjs",
+        "apps/desktop/src/credential-vault.mjs",
+        "package.json#dev:desktop"
+      ],
+      "dependencies": [
+        "Electron tray",
+        "safeStorage",
+        "Docker Desktop",
+        "local Supabase",
+        "Next.js",
+        "Fastify",
+        "Inngest"
+      ],
+      "validation": [
+        "GET /health on the worker",
+        "Automation Hub runtime page",
+        "tray process recovery"
+      ]
     },
     {
       "id": "shipment-automation",
-      "source_of_truth": "apps/worker/src/shipments",
-      "entry_points": ["apps/worker/src/shipments/monitor.ts", "apps/worker/src/shipments/run.ts", "apps/web/src/app/(app)/automation", "apps/web/src/app/api/automation/route.ts"],
-      "dependencies": ["TorqueCore Supabase", "headed Playwright Chrome", "OpenAI optional", "Telegram optional"],
-      "validation": ["pnpm.cmd --filter @cr/worker test", "pnpm.cmd typecheck", "pnpm.cmd build", "real queued shipment run"]
+      "source_of_truth": "apps/worker/src/automation/shipment-handler.ts",
+      "entry_points": [
+        "apps/web/src/app/(app)/shipments",
+        "apps/web/src/server/actions/shipments.ts",
+        "apps/worker/src/automation/shipment-adapters.ts",
+        "apps/worker/src/automation/shipment-result-store.ts",
+        "apps/worker/src/automation/torquecore-bridge.ts"
+      ],
+      "dependencies": [
+        "durable automation_jobs queue",
+        "shared Playwright browser",
+        "fixed provider adapters",
+        "TorqueCore Supabase bridge"
+      ],
+      "validation": ["worker unit tests", "database verification", "real queued multi-provider run"]
     }
   ],
   "facts": [
-    "The worker remains request-driven for competitor scraping and additionally owns a whitelisted TorqueCore shipment monitor backed by shipment_tracking_runs.",
-    "Scheduled competitor work is created by Inngest cron every five minutes and fan-outs store and product events with per-store concurrency limits.",
-    "Regular Playwright fetching is headless and pooled; manual takeover sessions use a separate headed persistent context and retain per-domain storage state.",
-    "apps/desktop is the Electron tray supervisor for hidden web, worker, and Inngest processes with automatic restart.",
-    "Shipment tracking uses headed minimized/off-screen Chrome, runs sequentially, and never promotes browser evidence into canonical TorqueCore shipment fields.",
-    "service_heartbeats is populated by the web health check rather than an autonomous worker heartbeat loop.",
-    "Local Supabase is already running on ports 54321-54323; web, worker, and Inngest were stopped during the 2026-07-17 audit.",
-    "Server-only credentials must remain outside NEXT_PUBLIC variables and must never be returned by worker health or application logs.",
-    "The repository currently contains unrelated user changes in .claude/settings.local.json and supabase/.temp/cli-latest; preserve them."
+    "All browser work is represented by strict versioned jobs: competitor_discovery, competitor_scrape, or shipment_tracking; arbitrary URLs, JavaScript, shell commands, and handler names are rejected.",
+    "The Postgres automation_jobs table and service-role-only claim, heartbeat, and stale-recovery functions are the durable queue source of truth.",
+    "The automation_settings row is the organization-scoped source of truth for running or paused state, competitor scrape interval, and maximum parallel jobs; switching accounts does not change another organization's policy.",
+    "A durable pause is written before active jobs are cancelled and is enforced by Inngest dispatch, the shipment scheduler, and the SQL claim function so recurring work cannot immediately recreate or claim jobs.",
+    "Per-organization concurrency is enforced while claiming jobs in Postgres; AUTOMATION_CONCURRENCY remains only the process-wide safety ceiling.",
+    "Competition scraping and shipment tracking share one lazy BrowserLauncher and concurrency budget; the legacy shipment monitor is not started by server.ts.",
+    "Browser mode is adaptive: headed minimized/off-screen real Chrome on Windows and headless Chromium on Linux, with optional proxy support.",
+    "Shipment provider adapters use fixed HTTPS URL templates; cookie consent is accepted, obstructive popups are dismissed, and CAPTCHA pauses only the affected provider/workflow.",
+    "Shipment browser policy is persisted per shipment: respect robots.txt, extended JavaScript result waiting, optional AI presentation, and manual CAPTCHA takeover; every queue entry point copies these settings into the versioned job payload.",
+    "Manual shipment CAPTCHA takeover preserves a visible browser session in the awaiting_user result. The UI can focus that session, and resume reads the solved page from the same session before closing it.",
+    "Bare PostgreSQL CI needs the Supabase role names anon, authenticated, and service_role before applying grants and RLS SQL; the initial raw SQL creates no-login shims only when those roles are absent.",
+    "Normalized shipment status is deterministic; OpenAI is optional and may improve presentation but cannot change the selected status.",
+    "TorqueCore integration is a live bridge that imports remote shipment requests into the local queue and writes normalized status/results back to its Supabase project.",
+    "Electron is the tray supervisor, keeps renderer isolation enabled, prevents external navigation, and stores optional local secrets through safeStorage.",
+    "The Automation Hub exposes organization-scoped process, queue, and event state. Cancelling an active job aborts its isolated Playwright context; job history can be deleted only after active work is stopped.",
+    "Owner-only entity deletion cancels matching queued or running jobs before database cascades remove competitor stores, products, and their dependent records.",
+    "The real regression track 1Z0R6D896828244757 must classify as info_received (UPS label created), not delivered; this is covered by a regression test and a live run.",
+    "Server-only credentials must never be NEXT_PUBLIC variables or returned by health endpoints/logs.",
+    "Unrelated user changes in .claude/settings.local.json and supabase/.temp/cli-latest must be preserved and excluded from commits."
   ]
 }

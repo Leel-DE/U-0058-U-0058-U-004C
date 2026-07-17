@@ -34,6 +34,7 @@ import {
 import { CopyableValue } from './_components/copyable';
 import { CrossStoreSearch } from './_components/cross-store-search';
 import { OpenAllListingsButton } from './_components/open-all-listings';
+import { DeleteProductControl } from '@/components/entity-delete-controls';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +46,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="space-y-6">
-      <ProductHeader product={product} />
+      <ProductHeader product={product} canDelete={ctx.role === 'owner'} />
       <MarketOverview product={product} />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
         <CompetitorComparison product={product} />
@@ -66,7 +67,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   );
 }
 
-function ProductHeader({ product }: { product: ProductDetail }) {
+function ProductHeader({ product, canDelete }: { product: ProductDetail; canDelete: boolean }) {
   const imageUrl =
     product.imageUrl ?? product.competitors.find((row) => row.imageUrl)?.imageUrl ?? null;
   const specs = [
@@ -126,12 +127,18 @@ function ProductHeader({ product }: { product: ProductDetail }) {
           </div>
         ) : null}
       </div>
-      <ProductActionsCard product={product} />
+      <ProductActionsCard product={product} canDelete={canDelete} />
     </header>
   );
 }
 
-function ProductActionsCard({ product }: { product: ProductDetail }) {
+function ProductActionsCard({
+  product,
+  canDelete,
+}: {
+  product: ProductDetail;
+  canDelete: boolean;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -151,6 +158,13 @@ function ProductActionsCard({ product }: { product: ProductDetail }) {
         <Button asChild variant="outline">
           <Link href="/exports">Export intelligence</Link>
         </Button>
+        {canDelete ? (
+          <DeleteProductControl
+            productId={product.id}
+            productName={product.canonicalTitle}
+            kind={product.entityType === 'normalized' ? 'my_product' : 'competitor_product'}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );

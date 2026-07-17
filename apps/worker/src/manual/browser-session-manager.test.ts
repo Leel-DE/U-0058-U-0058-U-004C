@@ -57,4 +57,8 @@ describe('list/getDomainStorageState fall back cleanly', () => {
   it('getDomainStorageState returns undefined for unknown domains', () => {
     expect(mgr.getDomainStorageState('does-not-exist.example')).toBeUndefined();
   });
+
+  it('focus returns null for an expired or unknown session', async () => {
+    await expect(mgr.focus('00000000-0000-4000-8000-aaaaaaaaaaaa')).resolves.toBeNull();
+  });
 });

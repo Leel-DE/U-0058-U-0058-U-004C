@@ -10,6 +10,7 @@ import { getContext } from '@/lib/auth';
 import { formatCurrency, timeAgo } from '@/lib/utils';
 import { PriceHistoryChart } from './_components/price-history-chart';
 import { ManualSnapshotForm } from './_components/manual-snapshot-form';
+import { DeleteProductControl } from '@/components/entity-delete-controls';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +53,7 @@ export default async function CompetitorProductPage({
     .limit(500);
 
   const canManage = ctx.role !== 'viewer';
+  const canDelete = ctx.role === 'owner';
   const latestSnapshotImage =
     snapshots
       .slice()
@@ -70,25 +72,34 @@ export default async function CompetitorProductPage({
           sizes="160px"
           priority
         />
-        <div className="space-y-1">
-          <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <Link href={`/competitors/${row.store.id}`} className="hover:underline">
-              {row.store.name}
-            </Link>
-            <span>·</span>
-            <Badge variant="outline">{row.product.lastSnapshotAvailability ?? 'unknown'}</Badge>
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 space-y-1">
+            <div className="text-muted-foreground flex items-center gap-2 text-sm">
+              <Link href={`/competitors/${row.store.id}`} className="hover:underline">
+                {row.store.name}
+              </Link>
+              <span>·</span>
+              <Badge variant="outline">{row.product.lastSnapshotAvailability ?? 'unknown'}</Badge>
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {row.product.title ?? row.product.url}
+            </h1>
+            <a
+              href={row.product.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary inline-flex items-center gap-1 text-sm hover:underline"
+            >
+              View on store <ExternalLink className="h-3 w-3" />
+            </a>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {row.product.title ?? row.product.url}
-          </h1>
-          <a
-            href={row.product.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary inline-flex items-center gap-1 text-sm hover:underline"
-          >
-            View on store <ExternalLink className="h-3 w-3" />
-          </a>
+          {canDelete ? (
+            <DeleteProductControl
+              productId={row.product.id}
+              productName={row.product.title ?? row.product.url}
+              kind="competitor_product"
+            />
+          ) : null}
         </div>
       </header>
 

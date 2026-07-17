@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AVAILABILITY, MAX_PRICE, SUPPORTED_CURRENCIES } from '../constants';
+import { AVAILABILITY, MAX_PRICE, SUPPORTED_CURRENCIES } from '../constants.js';
 
 export const createMyProductSchema = z.object({
   sku: z.string().min(1).max(100),

@@ -2,11 +2,20 @@ import Fastify from 'fastify';
 import pino from 'pino';
 import { z } from 'zod';
 import { fetchHtml } from './fetcher/cheerio.js';
-import { browserPoolStats, fetchHtmlBrowser, closePlaywright, playwrightHealth } from './fetcher/playwright.js';
+import {
+  browserPoolStats,
+  fetchHtmlBrowser,
+  closePlaywright,
+  playwrightHealth,
+} from './fetcher/playwright.js';
 import { createRequestId, logStructured } from './observability.js';
 import { extract } from './parser/cascade.js';
 import { classifyResponse } from './detect/block.js';
-import { detectBaseSelectorsFromPages, findFirstProductUrl, type DetectionPage } from './detect/base-selectors.js';
+import {
+  detectBaseSelectorsFromPages,
+  findFirstProductUrl,
+  type DetectionPage,
+} from './detect/base-selectors.js';
 import { checkRobots } from './robots/check.js';
 import { throttleByDomain } from './rate-limit.js';
 import type { ScrapingRules, ErrorCode } from './types.js';
@@ -16,11 +25,15 @@ import { debounceAi, aiCacheStats } from './ai/cache/ai-cache.js';
 import { aiStatus, getAIProvider } from './ai/providers/index.js';
 import { selectorSuggestionSchema } from './ai/schemas/selector-suggestion.js';
 import { categorySuggestionSchema } from './ai/schemas/category-suggestion.js';
-import { validateProductSelectors, validateCategorySelectors } from './ai/validators/selector-validator.js';
+import {
+  validateProductSelectors,
+  validateCategorySelectors,
+} from './ai/validators/selector-validator.js';
 import { detectCategoryHeuristics } from './ai/validators/category-heuristic.js';
 import {
   cancelManualSession,
   continueManualSession,
+  focusManualSession,
   getDomainStorageState,
   markManualSession,
   sessionStatus,
@@ -36,9 +49,7 @@ import {
   tearDownIfReady as tearDownManualIfReady,
   type ActivityPhase,
 } from './manual/browser-session-manager.js';
-import {
-  rehydrateFromDisk as rehydrateManualStorage,
-} from './manual/session-manager.js';
+import { rehydrateFromDisk as rehydrateManualStorage } from './manual/session-manager.js';
 import { startSessionCleanup, stopSessionCleanup } from './manual/session-cleanup.js';
 import {
   cancelDiscoveryRun,
@@ -53,7 +64,7 @@ import {
 import { analyzeStore } from './discovery/store-analyzer.js';
 import { runProductSelectorRepair } from './repair/selector-repair-runner.js';
 import { selectorRepairRequestSchema } from './repair/selector-repair-types.js';
-import { shipmentTrackingMonitor } from './shipments/monitor.js';
+import { automationRuntimeSupervisor } from './automation/runtime-supervisor.js';
 
 const logger = pino({ name: 'cr-worker', level: process.env.LOG_LEVEL ?? 'info' });
 const PORT = Number(process.env.PORT ?? 4000);
@@ -162,12 +173,17 @@ const discoveryControlReqSchema = z.object({
   runId: z.string().uuid(),
 });
 
-
 const DEFAULT_PER_DOMAIN_DELAY_MS = 1_000;
-const HTML_SNAPSHOT_LIMIT = Math.max(4_000, Number(process.env.WORKER_HTML_SNAPSHOT_CHARS ?? 200_000));
+const HTML_SNAPSHOT_LIMIT = Math.max(
+  4_000,
+  Number(process.env.WORKER_HTML_SNAPSHOT_CHARS ?? 200_000),
+);
 
 const app = Fastify({ logger: false });
-const fixtureFiller = '<p>Local fixture copy for offline scraping validation, selector testing, alert checks, dashboard refresh checks, and export generation checks.</p>'.repeat(10);
+const fixtureFiller =
+  '<p>Local fixture copy for offline scraping validation, selector testing, alert checks, dashboard refresh checks, and export generation checks.</p>'.repeat(
+    10,
+  );
 const requestContext = new WeakMap<object, { requestId: string; startedAt: number }>();
 
 async function fetchDetectionPage({
@@ -192,7 +208,11 @@ async function fetchDetectionPage({
     const robots = await checkRobots(url, userAgent);
     if (!robots.allowed) {
       warnings.push(`robots.txt disallows ${url}`);
-      logs.push({ level: 'warn', message: 'robots blocked selector detection fetch', context: { url } });
+      logs.push({
+        level: 'warn',
+        message: 'robots blocked selector detection fetch',
+        context: { url },
+      });
       return null;
     }
   }
@@ -217,25 +237,39 @@ async function fetchDetectionPage({
     }
     if (!cls.ok) {
       warnings.push(`Could not read ${url}: ${cls.code}`);
-      logs.push({ level: 'warn', message: 'selector detection fetch was not usable', context: { url, code: cls.code } });
+      logs.push({
+        level: 'warn',
+        message: 'selector detection fetch was not usable',
+        context: { url, code: cls.code },
+      });
       return null;
     }
     logs.push({
       level: 'info',
       message: 'selector detection page fetched',
-      context: { url, finalUrl: fetched.finalUrl, strategy: fetched.strategy, httpStatus: fetched.status },
+      context: {
+        url,
+        finalUrl: fetched.finalUrl,
+        strategy: fetched.strategy,
+        httpStatus: fetched.status,
+      },
     });
     return { url: fetched.finalUrl || url, html: fetched.html };
   } catch (err) {
     warnings.push(`Could not fetch ${url}: ${(err as Error).message}`);
-    logs.push({ level: 'warn', message: 'selector detection fetch failed', context: { url, error: (err as Error).message } });
+    logs.push({
+      level: 'warn',
+      message: 'selector detection fetch failed',
+      context: { url, error: (err as Error).message },
+    });
     return null;
   }
 }
 
 app.addHook('onRequest', async (req, reply) => {
   requestContext.set(req, { requestId: createRequestId('worker'), startedAt: Date.now() });
-  if (req.url === '/health' || req.url === '/robots.txt' || req.url.startsWith('/fixtures/')) return;
+  if (req.url === '/health' || req.url === '/robots.txt' || req.url.startsWith('/fixtures/'))
+    return;
   const auth = req.headers.authorization ?? '';
   if (!SECRET || auth !== `Bearer ${SECRET}`) {
     reply.code(401);
@@ -267,25 +301,39 @@ app.get('/health', async () => ({
   mode: process.env.LOCAL_DEV_MODE === 'true' ? 'local' : 'standard',
   ai: { ...aiStatus(), cache: aiCacheStats() },
   resources: { memory: process.memoryUsage(), browser: browserPoolStats() },
-  automation: shipmentTrackingMonitor.health(),
+  automation: automationRuntimeSupervisor.status(),
   ts: new Date().toISOString(),
 }));
 
 app.get('/automation/status', async () => ({
   ok: true,
-  shipmentTracking: shipmentTrackingMonitor.status(),
+  automationHub: automationRuntimeSupervisor.status(),
 }));
 
 app.get('/automation/events', async (req) => {
   const query = z
     .object({
-      after: z.string().uuid().optional(),
+      orgId: z.string().uuid(),
+      after: z.string().regex(/^\d+$/).optional(),
       limit: z.coerce.number().int().min(1).max(200).default(100),
     })
     .parse(req.query);
   return {
     ok: true,
-    events: shipmentTrackingMonitor.events(query),
+    events: await automationRuntimeSupervisor.events(query.orgId, query.limit, query.after),
+  };
+});
+
+app.post('/automation/cancel', async (req) => {
+  const input = z
+    .object({
+      orgId: z.string().uuid(),
+      jobIds: z.array(z.string().uuid()).max(200).optional(),
+    })
+    .parse(req.body);
+  return {
+    ok: true,
+    ...(await automationRuntimeSupervisor.cancel(input)),
   };
 });
 
@@ -429,7 +477,12 @@ app.post('/scrape', async (req, reply) => {
       // Escalate to Playwright if cheerio looked suspicious and we haven't used PW yet
       if (cls.code === 'suspicious' && fetched.strategy === 'cheerio' && strategy === 'auto') {
         try {
-          const pw = await fetchHtmlBrowser(url, userAgent, timeoutMs ?? 30_000, getDomainStorageState(host));
+          const pw = await fetchHtmlBrowser(
+            url,
+            userAgent,
+            timeoutMs ?? 30_000,
+            getDomainStorageState(host),
+          );
           const cls2 = classifyResponse(pw.status, pw.html);
           if (cls2.ok) {
             fetched = pw;
@@ -444,7 +497,10 @@ app.post('/scrape', async (req, reply) => {
                 durationMs: Date.now() - startedAt,
                 robotsAllowed: true,
               },
-              raw: { htmlSnippet: pw.html.slice(0, HTML_SNAPSHOT_LIMIT), screenshotBase64: pw.screenshotBase64 },
+              raw: {
+                htmlSnippet: pw.html.slice(0, HTML_SNAPSHOT_LIMIT),
+                screenshotBase64: pw.screenshotBase64,
+              },
             };
           }
         } catch (err) {
@@ -466,7 +522,10 @@ app.post('/scrape', async (req, reply) => {
             durationMs: Date.now() - startedAt,
             robotsAllowed: true,
           },
-          raw: { htmlSnippet: fetched.html.slice(0, HTML_SNAPSHOT_LIMIT), screenshotBase64: fetched.screenshotBase64 },
+          raw: {
+            htmlSnippet: fetched.html.slice(0, HTML_SNAPSHOT_LIMIT),
+            screenshotBase64: fetched.screenshotBase64,
+          },
         };
       }
     }
@@ -483,7 +542,10 @@ app.post('/scrape', async (req, reply) => {
           durationMs: Date.now() - startedAt,
           robotsAllowed: true,
         },
-        raw: { htmlSnippet: fetched.html.slice(0, HTML_SNAPSHOT_LIMIT), screenshotBase64: fetched.screenshotBase64 },
+        raw: {
+          htmlSnippet: fetched.html.slice(0, HTML_SNAPSHOT_LIMIT),
+          screenshotBase64: fetched.screenshotBase64,
+        },
       };
     }
 
@@ -510,7 +572,10 @@ app.post('/scrape', async (req, reply) => {
         confidence: data.confidence,
         fieldConfidence: data.fieldConfidence,
       },
-      raw: { htmlSnippet: fetched.html.slice(0, HTML_SNAPSHOT_LIMIT), screenshotBase64: fetched.screenshotBase64 },
+      raw: {
+        htmlSnippet: fetched.html.slice(0, HTML_SNAPSHOT_LIMIT),
+        screenshotBase64: fetched.screenshotBase64,
+      },
     };
   } catch (err) {
     logger.error({ err }, 'scrape failed');
@@ -576,16 +641,26 @@ app.post('/scrape/preview', async (req, reply) => {
   const parse = previewReqSchema.safeParse(req.body);
   if (!parse.success) {
     reply.code(400);
-    return { ok: false, errorCode: 'http_error', message: 'invalid_payload', meta: { strategy: 'cheerio', durationMs: 0 } };
+    return {
+      ok: false,
+      errorCode: 'http_error',
+      message: 'invalid_payload',
+      meta: { strategy: 'cheerio', durationMs: 0 },
+    };
   }
   const body = parse.data;
   req.body = { ...body, strategy: body.strategy };
-  return app.inject({
-    method: 'POST',
-    url: '/scrape',
-    headers: { authorization: req.headers.authorization as string, 'content-type': 'application/json' },
-    payload: body,
-  }).then(async (res) => JSON.parse(res.body));
+  return app
+    .inject({
+      method: 'POST',
+      url: '/scrape',
+      headers: {
+        authorization: req.headers.authorization as string,
+        'content-type': 'application/json',
+      },
+      payload: body,
+    })
+    .then(async (res) => JSON.parse(res.body));
 });
 
 app.post('/selectors/repair', async (req, reply) => {
@@ -609,7 +684,10 @@ app.post('/selectors/repair', async (req, reply) => {
       service: 'worker',
       level: result.ok ? 'info' : result.status === 'skipped' ? 'warn' : 'error',
       category: 'selector_repair',
-      event: result.status === 'failed' ? 'selector_repair_validation_failed' : 'selector_repair_ai_suggested',
+      event:
+        result.status === 'failed'
+          ? 'selector_repair_validation_failed'
+          : 'selector_repair_ai_suggested',
       durationMs: Date.now() - startedAt,
       metadata: {
         url: parse.data.url,
@@ -661,13 +739,17 @@ app.post('/scrape/auto-detect', async (req, reply) => {
       ok: false,
       errorCode: cls.code,
       message: `${cls.code} on ${url}`,
-      manualSessionRecommended: cls.code === 'captcha' || cls.code === 'blocked' || cls.code === 'suspicious',
+      manualSessionRecommended:
+        cls.code === 'captcha' || cls.code === 'blocked' || cls.code === 'suspicious',
     };
   }
 
   const cleaned = cleanDom(fetched.html);
   const provider = getAIProvider();
-  const reducedDom = reduceDomForPrompt(cleaned.html, Number(process.env.AI_EXTRACTION_MAX_HTML_CHARS ?? 60_000));
+  const reducedDom = reduceDomForPrompt(
+    cleaned.html,
+    Number(process.env.AI_EXTRACTION_MAX_HTML_CHARS ?? 60_000),
+  );
 
   try {
     if (pageType === 'category') {
@@ -682,11 +764,20 @@ app.post('/scrape/auto-detect', async (req, reply) => {
           validation: validateCategorySelectors(fetched.html, heuristic),
           cleanedDomHash: cleaned.hash,
           tokenEstimate: estimateTokens(reducedDom),
-          meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+          meta: {
+            strategy: fetched.strategy,
+            httpStatus: fetched.status,
+            durationMs: Date.now() - startedAt,
+          },
         };
       }
       if (!provider) {
-        return { ok: false, errorCode: 'ai_disabled', message: 'AI is disabled and category heuristics were not confident enough', heuristic };
+        return {
+          ok: false,
+          errorCode: 'ai_disabled',
+          message: 'AI is disabled and category heuristics were not confident enough',
+          heuristic,
+        };
       }
       const { value: suggestion, cacheHit } = await debounceAi(`category:${cleaned.hash}`, () =>
         provider.detectCategorySelectors({ url, cleanedDom: reducedDom, domHash: cleaned.hash }),
@@ -701,7 +792,11 @@ app.post('/scrape/auto-detect', async (req, reply) => {
         validation: validateCategorySelectors(fetched.html, parsed),
         cleanedDomHash: cleaned.hash,
         tokenEstimate: estimateTokens(reducedDom),
-        meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+        meta: {
+          strategy: fetched.strategy,
+          httpStatus: fetched.status,
+          durationMs: Date.now() - startedAt,
+        },
       };
     }
 
@@ -712,10 +807,16 @@ app.post('/scrape/auto-detect', async (req, reply) => {
         pageType,
         aiEnabled: false,
         source: preview ? preview.sourcePath : 'none',
-        message: preview ? 'AI disabled; structured data or heuristics produced a preview.' : 'AI disabled and no usable extraction found.',
+        message: preview
+          ? 'AI disabled; structured data or heuristics produced a preview.'
+          : 'AI disabled and no usable extraction found.',
         preview,
         cleanedDomHash: cleaned.hash,
-        meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+        meta: {
+          strategy: fetched.strategy,
+          httpStatus: fetched.status,
+          durationMs: Date.now() - startedAt,
+        },
       };
     }
 
@@ -741,7 +842,11 @@ app.post('/scrape/auto-detect', async (req, reply) => {
       preview,
       cleanedDomHash: cleaned.hash,
       tokenEstimate: estimateTokens(reducedDom),
-      meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+      meta: {
+        strategy: fetched.strategy,
+        httpStatus: fetched.status,
+        durationMs: Date.now() - startedAt,
+      },
     };
   } catch (err) {
     logger.warn({ err: (err as Error).message, url }, 'auto_detect_failed');
@@ -755,7 +860,11 @@ app.post('/scrape/auto-detect', async (req, reply) => {
       message: (err as Error).message,
       preview,
       cleanedDomHash: cleaned.hash,
-      meta: { strategy: fetched.strategy, httpStatus: fetched.status, durationMs: Date.now() - startedAt },
+      meta: {
+        strategy: fetched.strategy,
+        httpStatus: fetched.status,
+        durationMs: Date.now() - startedAt,
+      },
     };
   }
 });
@@ -764,7 +873,12 @@ app.post('/scrape/detect-base-selectors', async (req, reply) => {
   const parse = baseSelectorDetectReqSchema.safeParse(req.body);
   if (!parse.success) {
     reply.code(400);
-    return { ok: false, errorCode: 'http_error', message: 'invalid_payload', errors: parse.error.flatten().fieldErrors };
+    return {
+      ok: false,
+      errorCode: 'http_error',
+      message: 'invalid_payload',
+      errors: parse.error.flatten().fieldErrors,
+    };
   }
 
   const {
@@ -779,7 +893,11 @@ app.post('/scrape/detect-base-selectors', async (req, reply) => {
   } = parse.data;
   const startedAt = Date.now();
   const warnings: string[] = [];
-  const logs: Array<{ level: 'info' | 'warn'; message: string; context?: Record<string, unknown> }> = [];
+  const logs: Array<{
+    level: 'info' | 'warn';
+    message: string;
+    context?: Record<string, unknown>;
+  }> = [];
   const fetchOpts = {
     strategy,
     respectRobots,
@@ -841,7 +959,10 @@ app.post('/scrape/detect-base-selectors', async (req, reply) => {
       },
     };
   } catch (err) {
-    logger.warn({ err: (err as Error).message, homepageUrl, productUrl, categoryUrl }, 'base_selector_detection_failed');
+    logger.warn(
+      { err: (err as Error).message, homepageUrl, productUrl, categoryUrl },
+      'base_selector_detection_failed',
+    );
     reply.code(500);
     return {
       ok: false,
@@ -858,7 +979,12 @@ app.post('/competitors/analyze-store', async (req, reply) => {
   const parse = analyzeStoreReqSchema.safeParse(req.body);
   if (!parse.success) {
     reply.code(400);
-    return { ok: false, errorCode: 'http_error', message: 'invalid_payload', errors: parse.error.flatten().fieldErrors };
+    return {
+      ok: false,
+      errorCode: 'http_error',
+      message: 'invalid_payload',
+      errors: parse.error.flatten().fieldErrors,
+    };
   }
 
   const startedAt = Date.now();
@@ -876,14 +1002,23 @@ app.post('/competitors/analyze-store', async (req, reply) => {
       },
     };
   } catch (err) {
-    logger.warn({ err: (err as Error).message, homepageUrl: parse.data.homepageUrl }, 'store_analysis_failed');
+    logger.warn(
+      { err: (err as Error).message, homepageUrl: parse.data.homepageUrl },
+      'store_analysis_failed',
+    );
     reply.code(422);
     return {
       ok: false,
       errorCode: 'store_analysis_failed',
       message: (err as Error).message,
       warnings: ['Store analysis could not complete. Retry or use manual setup.'],
-      logs: [{ level: 'warn', message: 'store analysis failed', context: { error: (err as Error).message } }],
+      logs: [
+        {
+          level: 'warn',
+          message: 'store analysis failed',
+          context: { error: (err as Error).message },
+        },
+      ],
       meta: { durationMs: Date.now() - startedAt },
     };
   }
@@ -895,14 +1030,25 @@ app.post('/scrape/manual-session/start', async (req, reply) => {
     reply.code(400);
     return { ok: false, message: 'invalid_payload' };
   }
-  const status = await startManualSession(parse.data.url, parse.data.userAgent, parse.data.timeoutMs);
+  const status = await startManualSession(
+    parse.data.url,
+    parse.data.userAgent,
+    parse.data.timeoutMs,
+  );
   if (!status || !parse.data.rules) return { ok: Boolean(status), session: status };
 
-  const { status: readStatus, fetched } = await continueManualSession(status.id, parse.data.timeoutMs);
+  const { status: readStatus, fetched } = await continueManualSession(
+    status.id,
+    parse.data.timeoutMs,
+  );
   if (!fetched) return { ok: Boolean(readStatus), session: readStatus };
   const data = extract(fetched.html, parse.data.rules as ScrapingRules);
   if (data) {
-    const session = markManualSession(status.id, 'preview_ready', 'Extraction preview is ready from the visible browser.');
+    const session = markManualSession(
+      status.id,
+      'preview_ready',
+      'Extraction preview is ready from the visible browser.',
+    );
     return {
       ok: true,
       paused: false,
@@ -934,7 +1080,11 @@ app.post('/scrape/manual-session/start', async (req, reply) => {
     };
   }
 
-  const session = markManualSession(status.id, 'waiting_for_manual_action', 'Visible browser loaded, but extraction did not find a price. Adjust selectors or continue after the page settles.');
+  const session = markManualSession(
+    status.id,
+    'waiting_for_manual_action',
+    'Visible browser loaded, but extraction did not find a price. Adjust selectors or continue after the page settles.',
+  );
   return {
     ok: true,
     paused: false,
@@ -950,12 +1100,27 @@ app.post('/scrape/manual-session/continue', async (req, reply) => {
     reply.code(400);
     return { ok: false, message: 'invalid_payload' };
   }
-  const { status, fetched } = await continueManualSession(parse.data.sessionId, parse.data.timeoutMs);
+  const { status, fetched } = await continueManualSession(
+    parse.data.sessionId,
+    parse.data.timeoutMs,
+  );
   if (!status || !fetched) return { ok: Boolean(status), session: status };
-  const data = parse.data.rules ? extract(fetched.html, parse.data.rules as ScrapingRules) : undefined;
+  const data = parse.data.rules
+    ? extract(fetched.html, parse.data.rules as ScrapingRules)
+    : undefined;
   if (data) {
-    const session = markManualSession(parse.data.sessionId, 'preview_ready', 'Extraction preview is ready from the visible browser.');
-    return { ok: true, paused: false, session, preview: data, raw: { htmlSnippet: fetched.html.slice(0, 4_000) } };
+    const session = markManualSession(
+      parse.data.sessionId,
+      'preview_ready',
+      'Extraction preview is ready from the visible browser.',
+    );
+    return {
+      ok: true,
+      paused: false,
+      session,
+      preview: data,
+      raw: { htmlSnippet: fetched.html.slice(0, 4_000) },
+    };
   }
   const cls = classifyResponse(fetched.status, fetched.html);
   if (!cls.ok) {
@@ -972,13 +1137,25 @@ app.post('/scrape/manual-session/continue', async (req, reply) => {
       paused,
       needsManualAction: paused,
       errorCode: cls.code,
-      message: paused ? 'Still waiting for manual action in the browser window.' : `${cls.code} after manual continue`,
+      message: paused
+        ? 'Still waiting for manual action in the browser window.'
+        : `${cls.code} after manual continue`,
       session,
       raw: { htmlSnippet: fetched.html.slice(0, 4_000) },
     };
   }
-  const session = markManualSession(parse.data.sessionId, 'waiting_for_manual_action', 'Visible browser is readable, but extraction did not find a price. Adjust selectors or wait for the page to settle.');
-  return { ok: true, paused: false, session, preview: null, raw: { htmlSnippet: fetched.html.slice(0, 4_000) } };
+  const session = markManualSession(
+    parse.data.sessionId,
+    'waiting_for_manual_action',
+    'Visible browser is readable, but extraction did not find a price. Adjust selectors or wait for the page to settle.',
+  );
+  return {
+    ok: true,
+    paused: false,
+    session,
+    preview: null,
+    raw: { htmlSnippet: fetched.html.slice(0, 4_000) },
+  };
 });
 
 app.post('/scrape/manual-session/cancel', async (req, reply) => {
@@ -1051,6 +1228,20 @@ app.post('/scrape/manual-session/reopen', async (req, reply) => {
     return { ok: false, message: 'invalid_payload' };
   }
   const session = await reopenManualSession(parse.data.sessionId);
+  if (!session) {
+    reply.code(404);
+    return { ok: false, message: 'session_not_found' };
+  }
+  return { ok: true, session };
+});
+
+app.post('/scrape/manual-session/focus', async (req, reply) => {
+  const parse = reopenSchema.safeParse(req.body);
+  if (!parse.success) {
+    reply.code(400);
+    return { ok: false, message: 'invalid_payload' };
+  }
+  const session = await focusManualSession(parse.data.sessionId);
   if (!session) {
     reply.code(404);
     return { ok: false, message: 'session_not_found' };
@@ -1210,7 +1401,7 @@ const shutdown = async () => {
   logger.info('shutting down');
   try {
     stopSessionCleanup();
-    await shipmentTrackingMonitor.stop();
+    await automationRuntimeSupervisor.stop();
     await app.close();
   } finally {
     await closePlaywright();
@@ -1230,7 +1421,7 @@ app
       logger.info({ rehydrated }, 'restored persisted manual storage states');
     }
     startSessionCleanup();
-    await shipmentTrackingMonitor.start();
+    await automationRuntimeSupervisor.start();
   })
   .catch((err) => {
     logger.error(err);

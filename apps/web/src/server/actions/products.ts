@@ -9,6 +9,7 @@ import { schemas } from '@cr/shared';
 import { db, schema } from '@/lib/db';
 import { defineAction } from '@/lib/action';
 import { logAudit } from '@/lib/audit';
+import { cancelJobsForPayloadReference } from '@/server/automation/control';
 
 function urlHash(url: string) {
   return createHash('sha256').update(url.trim().toLowerCase()).digest('hex');
@@ -83,11 +84,57 @@ const deleteSchema = z.object({ id: z.string().uuid() });
 export const deleteMyProduct = defineAction(
   deleteSchema,
   async ({ id }, ctx) => {
-    await db()
+    const deleted = await db()
       .delete(schema.myProducts)
-      .where(and(eq(schema.myProducts.id, id), eq(schema.myProducts.orgId, ctx.orgId)));
+      .where(and(eq(schema.myProducts.id, id), eq(schema.myProducts.orgId, ctx.orgId)))
+      .returning({ id: schema.myProducts.id, sku: schema.myProducts.sku });
+    if (deleted[0]) {
+      await logAudit({
+        orgId: ctx.orgId,
+        userId: ctx.user.id,
+        action: 'my_product.delete',
+        entity: 'my_product',
+        entityId: deleted[0].id,
+        before: { sku: deleted[0].sku },
+      });
+    }
     revalidatePath('/products');
-    return { ok: true as const };
+    return { deleted: deleted.length };
+  },
+  { roles: ['owner'] },
+);
+
+export const deleteCompetitorProduct = defineAction(
+  deleteSchema,
+  async ({ id }, ctx) => {
+    await cancelJobsForPayloadReference({
+      orgId: ctx.orgId,
+      field: 'competitorProductId',
+      value: id,
+    });
+    const deleted = await db()
+      .delete(schema.competitorProducts)
+      .where(
+        and(eq(schema.competitorProducts.id, id), eq(schema.competitorProducts.orgId, ctx.orgId)),
+      )
+      .returning({
+        id: schema.competitorProducts.id,
+        storeId: schema.competitorProducts.storeId,
+        url: schema.competitorProducts.url,
+      });
+    if (deleted[0]) {
+      await logAudit({
+        orgId: ctx.orgId,
+        userId: ctx.user.id,
+        action: 'competitor_product.delete',
+        entity: 'competitor_product',
+        entityId: deleted[0].id,
+        before: { url: deleted[0].url, storeId: deleted[0].storeId },
+      });
+      revalidatePath(`/competitors/${deleted[0].storeId}`);
+    }
+    revalidatePath('/products');
+    return { deleted: deleted.length };
   },
   { roles: ['owner'] },
 );

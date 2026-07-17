@@ -27,6 +27,15 @@ const REQUIRED_TABLES = [
   'service_heartbeats',
   'schema_migration_log',
   'schema_verification_snapshots',
+  'shipments',
+  'shipment_events',
+  'shipment_provider_results',
+  'automation_jobs',
+  'automation_job_events',
+  'automation_settings',
+  'provider_health',
+  'notification_deliveries',
+  'shipment_update_requests',
 ];
 
 const REQUIRED_INDEXES = [
@@ -38,9 +47,18 @@ const REQUIRED_INDEXES = [
   'selector_repair_attempts_product_idx',
   'crawl_domain_health_org_domain_unique',
   'service_heartbeats_service_instance_unique',
+  'automation_jobs_active_dedupe_unique',
+  'automation_jobs_claim_idx',
+  'shipments_org_tracking_unique',
+  'shipment_events_shipment_hash_unique',
 ];
 
-const REQUIRED_VIEWS = ['v_latest_snapshot', 'v_org_dashboard', 'v_price_movers'];
+const REQUIRED_VIEWS = [
+  'v_latest_snapshot',
+  'v_org_dashboard',
+  'v_price_movers',
+  'shipment_tracking_public',
+];
 const REQUIRED_RLS_TABLES = [
   'profiles',
   'organizations',
@@ -54,6 +72,14 @@ const REQUIRED_RLS_TABLES = [
   'extraction_debug_artifacts',
   'selector_repair_attempts',
   'crawl_domain_health',
+  'shipments',
+  'automation_jobs',
+  'automation_job_events',
+  'automation_settings',
+  'shipment_events',
+  'shipment_provider_results',
+  'provider_health',
+  'shipment_update_requests',
 ];
 const REQUIRED_POLICIES = [
   'profiles_select',
@@ -68,6 +94,14 @@ const REQUIRED_POLICIES = [
   'extraction_debug_artifacts_select',
   'selector_repair_attempts_select',
   'crawl_domain_health_select',
+  'shipments_select',
+  'automation_jobs_select',
+  'automation_job_events_select',
+  'automation_settings_select',
+  'shipment_events_select',
+  'shipment_provider_results_select',
+  'provider_health_select',
+  'shipment_update_requests_insert',
 ];
 const REQUIRED_BUCKETS = ['exports', 'raw-html', 'screenshots', 'html', 'debug'];
 
@@ -98,6 +132,21 @@ async function main() {
     const tables = tableRows.map((row) => row.table_name);
     checks.push(checkIncludes('tables', tables, REQUIRED_TABLES));
 
+    const columnRows = await sql<{ table_name: string; column_name: string }[]>`
+      select table_name, column_name
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'shipments'
+    `;
+    const shipmentColumns = columnRows.map((row) => `${row.table_name}.${row.column_name}`);
+    checks.push(
+      checkIncludes('shipment_settings_columns', shipmentColumns, [
+        'shipments.respect_robots_txt',
+        'shipments.force_javascript',
+        'shipments.use_ai',
+        'shipments.use_manual_captcha',
+      ]),
+    );
+
     const indexRows = await sql<{ indexname: string }[]>`
       select indexname from pg_indexes where schemaname = 'public'
     `;
@@ -127,6 +176,21 @@ async function main() {
     const policies = policyRows.map((row) => row.policyname);
     checks.push(checkIncludes('policies', policies, REQUIRED_POLICIES));
 
+    const functionRows = await sql<{ proname: string }[]>`
+      select p.proname
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public'
+    `;
+    const functions = functionRows.map((row) => row.proname);
+    checks.push(
+      checkIncludes('queue_functions', functions, [
+        'claim_automation_job',
+        'heartbeat_automation_job',
+        'recover_stale_automation_jobs',
+      ]),
+    );
+
     const triggerRows = await sql<{ tgname: string; table_name: string }[]>`
       select t.tgname, c.relname as table_name
       from pg_trigger t
@@ -142,6 +206,7 @@ async function main() {
         'my_products.trg_updated_at',
         'scraping_rules.trg_updated_at',
         'selector_repair_attempts.trg_updated_at',
+        'automation_settings.trg_updated_at',
       ]),
     );
 
@@ -158,7 +223,11 @@ async function main() {
       buckets = bucketRows.map((row) => row.id);
       checks.push(checkIncludes('storage_buckets', buckets, REQUIRED_BUCKETS));
     } else {
-      checks.push({ name: 'storage_buckets', status: 'skip', detail: 'storage schema not present' });
+      checks.push({
+        name: 'storage_buckets',
+        status: 'skip',
+        detail: 'storage schema not present',
+      });
     }
 
     const rawSqlRows = await sql<{ path: string; hash: string; applied_at: string }[]>`
@@ -181,6 +250,7 @@ async function main() {
       triggers: triggerTargets.sort(),
       buckets: buckets.sort(),
       rawSql: rawSqlRows,
+      functions: functions.sort(),
     };
     const snapshotHash = hashSnapshot(snapshot);
     await sql`

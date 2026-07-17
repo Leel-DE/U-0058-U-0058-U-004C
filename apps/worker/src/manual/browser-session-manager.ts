@@ -706,6 +706,18 @@ export async function reopen(id: string): Promise<SessionView | null> {
   return viewOf(s);
 }
 
+/** Bring an active manual browser to the front, or reopen it if it was closed. */
+export async function focus(id: string): Promise<SessionView | null> {
+  const s = sessions.get(id);
+  if (!s) return null;
+  if (!s.context || !s.page || s.closedAt) return reopen(id);
+  await s.page.bringToFront().catch(() => null);
+  await s.page.evaluate(() => window.focus()).catch(() => null);
+  bump(s);
+  log(s, 'browser focused by operator');
+  return viewOf(s);
+}
+
 /** Mark the session as having no more work to do; auto-close will fire on next sweep. */
 export function complete(id: string, note?: string): SessionView | null {
   const s = sessions.get(id);

@@ -15,6 +15,7 @@ import {
   cancel as cancelInternal,
   complete as completeInternal,
   fireEvent,
+  focus as focusInternal,
   get,
   getDomainStorageState as getDomainStorageStateInternal,
   navigateInSession as navigateInSessionInternal,
@@ -107,6 +108,10 @@ export async function continueManualSession(
 
 export async function cancelManualSession(id: string) {
   return legacyShape(await cancelInternal(id));
+}
+
+export async function focusManualSession(id: string) {
+  return legacyShape(await focusInternal(id));
 }
 
 export function sessionStatus(id: string) {

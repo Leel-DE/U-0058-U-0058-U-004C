@@ -5,7 +5,7 @@ import {
   DEFAULT_CRAWL_FREQUENCY_MINUTES,
   MIN_CRAWL_DELAY_SECONDS,
   SUPPORTED_CURRENCIES,
-} from '../constants';
+} from '../constants.js';
 
 const domainRegex = /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
 
@@ -14,7 +14,11 @@ const domainRegex = /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i;
 const domainField = z.preprocess(
   (v) =>
     typeof v === 'string'
-      ? v.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim()
+      ? v
+          .toLowerCase()
+          .replace(/^https?:\/\//, '')
+          .replace(/\/.*$/, '')
+          .trim()
       : v,
   z
     .string()
@@ -144,8 +148,18 @@ export const createAnalyzedStoreSchema = z.object({
   }),
   recommendedSettings: z.object({
     crawlPreset: z.enum(CRAWL_PRESETS).default('balanced'),
-    crawlFrequencyMinutes: z.number().int().min(60).max(7 * 24 * 60).default(DEFAULT_CRAWL_FREQUENCY_MINUTES),
-    crawlDelaySeconds: z.number().int().min(MIN_CRAWL_DELAY_SECONDS).max(60).default(DEFAULT_CRAWL_DELAY_SECONDS),
+    crawlFrequencyMinutes: z
+      .number()
+      .int()
+      .min(60)
+      .max(7 * 24 * 60)
+      .default(DEFAULT_CRAWL_FREQUENCY_MINUTES),
+    crawlDelaySeconds: z
+      .number()
+      .int()
+      .min(MIN_CRAWL_DELAY_SECONDS)
+      .max(60)
+      .default(DEFAULT_CRAWL_DELAY_SECONDS),
     respectRobots: z.boolean().default(true),
     jsRequired: z.boolean().default(false),
     useManualCaptcha: z.boolean().default(true),

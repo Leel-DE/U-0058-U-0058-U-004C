@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { app, BrowserWindow, Menu, nativeImage, Notification, shell, Tray } from 'electron';
+import { CredentialVault } from './credential-vault.mjs';
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(desktopRoot, '../..');
@@ -31,11 +32,15 @@ function loadEnvironment() {
   } catch (error) {
     console.error('Could not load .env.local', error);
   }
+  const vault = new CredentialVault(join(app.getPath('userData'), 'automation-hub.credentials'));
+  for (const [key, value] of Object.entries(vault.load())) {
+    if (!process.env[key] && typeof value === 'string') process.env[key] = value;
+  }
 }
 
 function logDirectory() {
   const base = process.env.LOCALAPPDATA || process.env.XDG_STATE_HOME || app.getPath('logs');
-  const directory = join(base, 'CompetitionRadar', 'logs');
+  const directory = join(base, 'AutomationHub', 'logs');
   mkdirSync(directory, { recursive: true });
   return directory;
 }
@@ -174,12 +179,12 @@ function showMainWindow() {
 
 function updateTrayMenu(state = 'Starting') {
   if (!tray) return;
-  tray.setToolTip(`Competition Radar — ${state}`);
+  tray.setToolTip(`Automation Hub — ${state}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: `Automation: ${state}`, enabled: false },
       { type: 'separator' },
-      { label: 'Open Competition Radar', click: showMainWindow },
+      { label: 'Open Automation Hub', click: showMainWindow },
       {
         label: 'Open Logs',
         click: () => void shell.openPath(logDirectory()),
@@ -193,7 +198,7 @@ function updateTrayMenu(state = 'Starting') {
       },
       { type: 'separator' },
       {
-        label: 'Exit Competition Radar',
+        label: 'Exit Automation Hub',
         click: () => {
           shuttingDown = true;
           app.quit();
@@ -230,11 +235,16 @@ async function pollAutomation() {
       return;
     }
     for (const event of events) {
-      if (!['run_completed', 'run_failed'].includes(event.event)) continue;
+      if (!['job_completed', 'job_failed', 'manual_action_required'].includes(event.event))
+        continue;
       if (Notification.isSupported()) {
         new Notification({
           title:
-            event.event === 'run_completed' ? 'Shipment Check Completed' : 'Shipment Check Failed',
+            event.event === 'job_completed'
+              ? 'Automation completed'
+              : event.event === 'manual_action_required'
+                ? 'Action required'
+                : 'Automation failed',
           body: event.message,
         }).show();
       }
@@ -265,8 +275,19 @@ function createWindow() {
     mainWindow.hide();
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    try {
+      const target = new URL(url);
+      if (target.protocol === 'https:' || target.protocol === 'http:') {
+        void shell.openExternal(target.toString());
+      }
+    } catch {
+      // Invalid and non-web URLs remain blocked.
+    }
     return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const target = new URL(url);
+    if (target.origin !== 'http://127.0.0.1:3000') event.preventDefault();
   });
 }
 
@@ -284,7 +305,7 @@ async function boot() {
     await mainWindow.loadURL('http://127.0.0.1:3000/automation');
   } else {
     await mainWindow.loadURL(
-      "data:text/html;charset=utf-8,<main style='font:16px system-ui;padding:32px'><h1>Competition Radar could not start</h1><p>Open the tray menu and check the logs.</p></main>",
+      "data:text/html;charset=utf-8,<main style='font:16px system-ui;padding:32px'><h1>Automation Hub could not start</h1><p>Open the tray menu and check the logs.</p></main>",
     );
   }
   if (!hiddenStart) showMainWindow();

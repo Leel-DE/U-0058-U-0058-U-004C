@@ -51,7 +51,7 @@ export function defineAction<Schema extends ZodTypeAny, R>(
       console.error('[action] internal error', err);
       return fail({
         code: 'internal',
-        message: err instanceof Error ? err.message : 'Unknown error',
+        message: 'The request could not be completed. Please try again.',
       });
     }
   };
