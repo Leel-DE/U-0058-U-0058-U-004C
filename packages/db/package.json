@@ -24,12 +24,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",
-    "drizzle-orm": "^0.36.4",
+    "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.5"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.30.1",
     "dotenv": "^16.4.7",
+    "drizzle-kit": "^0.30.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
