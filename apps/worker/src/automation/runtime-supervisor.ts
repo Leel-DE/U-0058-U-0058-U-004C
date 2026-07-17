@@ -16,6 +16,15 @@ import { CompetitionResultStore } from './competition-result-store.js';
 
 type RuntimeState = 'disabled' | 'starting' | 'idle' | 'running' | 'stopping' | 'error';
 
+interface ActiveJob {
+  controller: AbortController;
+  orgId: string;
+  type: BrowserAutomationJob['type'];
+  startedAt: string;
+}
+
+const runtimeStartedAt = new Date().toISOString();
+
 export class RuntimeSupervisor {
   private state: RuntimeState = 'disabled';
   private timer: NodeJS.Timeout | null = null;
@@ -26,7 +35,7 @@ export class RuntimeSupervisor {
   private bridge: TorqueCoreShipmentBridge | null = null;
   private competitionResults: CompetitionResultStore | null = null;
   private readonly executor = new BrowserJobExecutor(browserContextManager);
-  private readonly active = new Map<string, AbortController>();
+  private readonly active = new Map<string, ActiveJob>();
   private lastError: string | null = null;
   private lastTickAt: string | null = null;
   private lastScheduleAt = 0;
@@ -70,7 +79,7 @@ export class RuntimeSupervisor {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     await this.bridge?.stop();
-    for (const controller of this.active.values()) controller.abort();
+    for (const activeJob of this.active.values()) activeJob.controller.abort();
     const deadline = Date.now() + 10_000;
     while (this.active.size > 0 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -92,7 +101,12 @@ export class RuntimeSupervisor {
         const job = await this.lease.claim();
         if (!job) break;
         const controller = new AbortController();
-        this.active.set(job.id, controller);
+        this.active.set(job.id, {
+          controller,
+          orgId: job.orgId,
+          type: job.type,
+          startedAt: new Date().toISOString(),
+        });
         void this.run(job, controller);
       }
       this.state = this.active.size > 0 ? 'running' : 'idle';
@@ -138,6 +152,17 @@ export class RuntimeSupervisor {
         progress: result.status === 'awaiting_user' ? 90 : 100,
       });
     } catch (error) {
+      if (controller.signal.aborted) {
+        await this.lease.cancel(job).catch(() => undefined);
+        await this.logger
+          .write(job, {
+            level: 'warn',
+            event: 'job_cancelled',
+            message: 'Job stopped by an operator.',
+          })
+          .catch(() => undefined);
+        return;
+      }
       if (job.type === 'competitor_scrape' && job.attemptCount >= job.maxAttempts) {
         await this.competitionResults?.record(job, false).catch(() => undefined);
       }
@@ -156,24 +181,50 @@ export class RuntimeSupervisor {
   }
 
   status() {
+    const memory = process.memoryUsage();
     return {
       enabled: this.state !== 'disabled',
       state: this.state,
       activeJobs: [...this.active.keys()],
+      activeJobDetails: [...this.active.entries()].map(([id, activeJob]) => ({
+        id,
+        orgId: activeJob.orgId,
+        type: activeJob.type,
+        startedAt: activeJob.startedAt,
+      })),
       concurrency: this.concurrency,
       pollMs: this.pollMs,
       lastTickAt: this.lastTickAt,
       lastError: this.lastError,
+      process: {
+        pid: process.pid,
+        startedAt: runtimeStartedAt,
+        uptimeSeconds: Math.floor(process.uptime()),
+        memoryRssBytes: memory.rss,
+      },
       browser: { ...browserLauncher.status(), ...browserContextManager.status() },
       torqueCoreBridge: this.bridge?.status() ?? { enabled: false },
     };
   }
 
-  async events(limit = 100, after?: string) {
+  async cancel(input: { orgId: string; jobIds?: string[] }) {
+    const requestedIds = input.jobIds ? new Set(input.jobIds) : null;
+    const cancelled: string[] = [];
+    for (const [jobId, activeJob] of this.active) {
+      if (activeJob.orgId !== input.orgId) continue;
+      if (requestedIds && !requestedIds.has(jobId)) continue;
+      activeJob.controller.abort();
+      cancelled.push(jobId);
+    }
+    return { cancelled };
+  }
+
+  async events(orgId: string, limit = 100, after?: string) {
     if (!this.lease) return [];
     let query = this.lease.client
       .from('automation_job_events')
       .select('id, job_id, level, event, message, progress, metadata_json, created_at')
+      .eq('org_id', orgId)
       .order('id', { ascending: after ? true : false })
       .limit(Math.max(1, Math.min(200, limit)));
     if (after) query = query.gt('id', after);

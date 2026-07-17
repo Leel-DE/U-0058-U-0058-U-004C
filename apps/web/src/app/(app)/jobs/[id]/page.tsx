@@ -7,6 +7,7 @@ import { getContext } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CancelJobControl, DeleteJobControl } from '../../automation/_components/job-controls';
 
 export const dynamic = 'force-dynamic';
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -18,6 +19,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     .where(and(eq(schema.automationJobs.id, id), eq(schema.automationJobs.orgId, ctx.orgId)))
     .limit(1);
   if (!job) notFound();
+  const active = ['queued', 'running', 'awaiting_user'].includes(job.status);
+  const terminal = ['succeeded', 'partial', 'failed', 'dead_letter', 'cancelled'].includes(
+    job.status,
+  );
   const events = await db()
     .select()
     .from(schema.automationJobEvents)
@@ -36,16 +41,22 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           Все задачи
         </Link>
       </Button>
-      <header>
-        <div className="flex flex-wrap gap-2">
-          <Badge>{job.type}</Badge>
-          <Badge variant="outline">{job.status}</Badge>
-          <Badge variant="outline">{job.priority}</Badge>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap gap-2">
+            <Badge>{job.type}</Badge>
+            <Badge variant="outline">{job.status}</Badge>
+            <Badge variant="outline">{job.priority}</Badge>
+          </div>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight">Job {job.id.slice(0, 12)}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Executor {job.executorVersion} · input v{job.inputVersion} · result v{job.resultVersion}
+          </p>
         </div>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">Job {job.id.slice(0, 12)}</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Executor {job.executorVersion} · input v{job.inputVersion} · result v{job.resultVersion}
-        </p>
+        <div className="flex flex-wrap gap-2">
+          {active && ctx.role !== 'viewer' ? <CancelJobControl jobId={job.id} /> : null}
+          {terminal && ctx.role === 'owner' ? <DeleteJobControl jobId={job.id} /> : null}
+        </div>
       </header>
       <Card>
         <CardHeader>

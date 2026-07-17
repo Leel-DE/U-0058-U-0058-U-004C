@@ -13,6 +13,7 @@
       "entry_points": [
         "apps/web/src/app",
         "apps/web/src/server/actions",
+        "apps/web/src/server/automation",
         "apps/web/src/lib/inngest/functions.ts"
       ],
       "dependencies": ["Next.js 15", "React 19", "Drizzle", "Supabase Auth", "Inngest"],
@@ -130,6 +131,8 @@
     "Normalized shipment status is deterministic; OpenAI is optional and may improve presentation but cannot change the selected status.",
     "TorqueCore integration is a live bridge that imports remote shipment requests into the local queue and writes normalized status/results back to its Supabase project.",
     "Electron is the tray supervisor, keeps renderer isolation enabled, prevents external navigation, and stores optional local secrets through safeStorage.",
+    "The Automation Hub exposes organization-scoped process, queue, and event state. Cancelling an active job aborts its isolated Playwright context; job history can be deleted only after active work is stopped.",
+    "Owner-only entity deletion cancels matching queued or running jobs before database cascades remove competitor stores, products, and their dependent records.",
     "The real regression track 1Z0R6D896828244757 must classify as info_received (UPS label created), not delivered; this is covered by a regression test and a live run.",
     "Server-only credentials must never be NEXT_PUBLIC variables or returned by health endpoints/logs.",
     "Unrelated user changes in .claude/settings.local.json and supabase/.temp/cli-latest must be preserved and excluded from commits."

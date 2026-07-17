@@ -28,12 +28,17 @@ export class BrowserJobExecutor {
     job.payload = payload;
     const handler = this.handlers.get(job.type);
     if (!handler) throw new Error(`unsupported_job_type:${job.type}`);
+    callbacks.signal.throwIfAborted();
     const context = await this.contexts.create({
       allowHeavyResources: job.type === 'shipment_tracking',
     });
+    const closeOnAbort = () => void this.contexts.close(context);
+    callbacks.signal.addEventListener('abort', closeOnAbort, { once: true });
     try {
+      callbacks.signal.throwIfAborted();
       return await handler({ job, browserContext: context, ...callbacks });
     } finally {
+      callbacks.signal.removeEventListener('abort', closeOnAbort);
       await this.contexts.close(context);
     }
   }

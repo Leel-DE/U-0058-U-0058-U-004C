@@ -312,13 +312,27 @@ app.get('/automation/status', async () => ({
 app.get('/automation/events', async (req) => {
   const query = z
     .object({
+      orgId: z.string().uuid(),
       after: z.string().regex(/^\d+$/).optional(),
       limit: z.coerce.number().int().min(1).max(200).default(100),
     })
     .parse(req.query);
   return {
     ok: true,
-    events: await automationRuntimeSupervisor.events(query.limit, query.after),
+    events: await automationRuntimeSupervisor.events(query.orgId, query.limit, query.after),
+  };
+});
+
+app.post('/automation/cancel', async (req) => {
+  const input = z
+    .object({
+      orgId: z.string().uuid(),
+      jobIds: z.array(z.string().uuid()).max(200).optional(),
+    })
+    .parse(req.body);
+  return {
+    ok: true,
+    ...(await automationRuntimeSupervisor.cancel(input)),
   };
 });
 

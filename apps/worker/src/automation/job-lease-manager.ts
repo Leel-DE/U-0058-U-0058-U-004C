@@ -85,6 +85,26 @@ export class JobLeaseManager {
     if (!data) throw new Error('job_lease_lost');
   }
 
+  async cancel(job: BrowserAutomationJob) {
+    const { error } = await this.client
+      .from('automation_jobs')
+      .update({
+        status: 'cancelled',
+        finished_at: new Date().toISOString(),
+        error_code: 'cancelled_by_user',
+        error_summary: 'The job was stopped by an operator.',
+        lease_owner: null,
+        lease_token: null,
+        leased_until: null,
+        heartbeat_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', job.id)
+      .eq('lease_token', job.leaseToken)
+      .eq('status', 'running');
+    if (error) throw error;
+  }
+
   async fail(job: BrowserAutomationJob, error: unknown) {
     const exhausted = job.attemptCount >= job.maxAttempts;
     const message = error instanceof Error ? error.message.slice(0, 300) : 'Unknown worker error';
