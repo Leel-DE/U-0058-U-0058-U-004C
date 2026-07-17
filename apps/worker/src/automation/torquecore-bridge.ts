@@ -10,6 +10,48 @@ interface RemoteShipment {
   tracking_number: string;
   tracking_enabled?: boolean;
 }
+interface LocalShipmentExport {
+  id: string;
+  tracking_number: string;
+  tracking_enabled: boolean | null;
+  current_status: string | null;
+  last_checked_at: string | null;
+  delivered_at: string | null;
+  origin_country: string | null;
+  destination_country: string | null;
+  metadata_json: Record<string, unknown> | null;
+}
+
+// TorqueCore accepts a narrower canonical status set than Radar. Map the one
+// diverging value and clamp anything unknown so the check constraint holds.
+const TORQUECORE_STATUSES = new Set([
+  'pending',
+  'registered',
+  'in_transit',
+  'customs',
+  'arrived_at_destination',
+  'handed_to_local_carrier',
+  'out_for_delivery',
+  'delivered',
+  'exception',
+  'delayed',
+  'returned',
+  'unknown',
+]);
+
+function toTorqueCoreStatus(status: string | null | undefined): string {
+  if (!status) return 'pending';
+  const mapped = status === 'info_received' ? 'registered' : status;
+  return TORQUECORE_STATUSES.has(mapped) ? mapped : 'unknown';
+}
+
+// TorqueCore stores ISO 3166-1 alpha-2 only; drop anything that is not two
+// characters instead of tripping the length check.
+function toAlpha2(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim().toUpperCase();
+  return trimmed.length === 2 ? trimmed : null;
+}
 
 export class TorqueCoreShipmentBridge {
   private remote: SupabaseClient | null = null;
@@ -121,6 +163,8 @@ export class TorqueCoreShipmentBridge {
             .eq('status', 'queued');
         }
       }
+
+      await this.pushLocalShipments();
       this.lastSyncAt = new Date().toISOString();
       this.lastError = null;
     } catch (error) {
@@ -157,6 +201,99 @@ export class TorqueCoreShipmentBridge {
     return String(data.id);
   }
 
+  // Reverse direction: shipments created inside Radar (no torquecoreShipmentId
+  // in local metadata) are inserted into the TorqueCore shipments table so the
+  // remote admin list mirrors them. Imported shipments already carry the marker
+  // and are skipped, so this never pushes TorqueCore's own rows back.
+  private async pushLocalShipments() {
+    if (!this.remote || !this.orgId) return;
+    const { data, error } = await this.local
+      .from('shipments')
+      .select(
+        'id, tracking_number, tracking_enabled, current_status, last_checked_at, delivered_at, origin_country, destination_country, metadata_json',
+      )
+      .eq('org_id', this.orgId)
+      .limit(500);
+    if (error) throw error;
+    for (const shipment of (data ?? []) as LocalShipmentExport[]) {
+      const metadata = (shipment.metadata_json ?? {}) as Record<string, unknown>;
+      if (typeof metadata.torquecoreShipmentId === 'string') continue;
+      await this.exportShipment(shipment, metadata);
+    }
+  }
+
+  private async exportShipment(
+    shipment: LocalShipmentExport,
+    metadata: Record<string, unknown>,
+  ) {
+    if (!this.remote || !this.orgId) return;
+    const trackingNumber = shipment.tracking_number.replace(/\s+/g, '').toUpperCase();
+    const { data: existing, error: findError } = await this.remote
+      .from('shipments')
+      .select('id')
+      .eq('tracking_number', trackingNumber)
+      .is('order_id', null)
+      .maybeSingle();
+    if (findError) throw findError;
+    let remoteId = existing?.id ? String(existing.id) : null;
+    if (!remoteId) {
+      // Reuse the local id as the remote id so pushResult status updates target
+      // the same row without an extra lookup. inbound_supplier with a null
+      // supplier keeps the direction party check satisfied.
+      const { data, error } = await this.remote
+        .from('shipments')
+        .insert({
+          id: shipment.id,
+          tracking_number: trackingNumber,
+          shipment_direction: 'inbound_supplier',
+          tracking_enabled: shipment.tracking_enabled ?? true,
+          current_status: toTorqueCoreStatus(shipment.current_status),
+          origin_country: toAlpha2(shipment.origin_country),
+          destination_country: toAlpha2(shipment.destination_country),
+          last_checked_at: shipment.last_checked_at ?? null,
+          delivered_at: shipment.delivered_at ?? null,
+        })
+        .select('id')
+        .single();
+      if (error) {
+        // A concurrent insert or a pre-existing TorqueCore row with the same
+        // tracking number: adopt the remote id instead of failing the sync.
+        if (error.code === '23505') {
+          const { data: dup } = await this.remote
+            .from('shipments')
+            .select('id')
+            .eq('tracking_number', trackingNumber)
+            .is('order_id', null)
+            .maybeSingle();
+          remoteId = dup?.id ? String(dup.id) : null;
+        } else {
+          throw error;
+        }
+      } else {
+        remoteId = String(data.id);
+      }
+    }
+    if (!remoteId) return;
+    await this.local
+      .from('shipments')
+      .update({ metadata_json: { ...metadata, torquecoreShipmentId: remoteId } })
+      .eq('id', shipment.id)
+      .eq('org_id', this.orgId);
+  }
+
+  private async resolveRemoteShipmentId(localShipmentId: string): Promise<string | null> {
+    const { data, error } = await this.local
+      .from('shipments')
+      .select('metadata_json')
+      .eq('id', localShipmentId)
+      .maybeSingle();
+    if (error || !data) return localShipmentId;
+    const metadata = (data.metadata_json ?? {}) as Record<string, unknown>;
+    return typeof metadata.torquecoreShipmentId === 'string'
+      ? metadata.torquecoreShipmentId
+      : localShipmentId;
+  }
+
   private async shipmentSettings(shipmentId: string) {
     const { data, error } = await this.local
       .from('shipments')
@@ -175,10 +312,25 @@ export class TorqueCoreShipmentBridge {
 
   async pushResult(job: BrowserAutomationJob, result: Record<string, unknown>) {
     if (!this.remote || job.type !== 'shipment_tracking') return;
-    const externalShipmentId =
+    // TorqueCore-origin jobs carry externalShipmentId. Radar-origin jobs do
+    // not, so resolve the remote id from the local metadata written by
+    // exportShipment (falling back to the local id, which we reuse remotely).
+    let externalShipmentId =
       typeof job.payload.externalShipmentId === 'string'
         ? job.payload.externalShipmentId
-        : String(result.shipmentId);
+        : null;
+    if (!externalShipmentId) {
+      const localShipmentId =
+        typeof job.payload.shipmentId === 'string'
+          ? job.payload.shipmentId
+          : typeof result.shipmentId === 'string'
+            ? result.shipmentId
+            : null;
+      externalShipmentId = localShipmentId
+        ? await this.resolveRemoteShipmentId(localShipmentId)
+        : null;
+    }
+    if (!externalShipmentId) return;
     const externalRunId =
       typeof job.payload.externalRunId === 'string' ? job.payload.externalRunId : null;
     const status = String(result.status ?? 'unknown');
