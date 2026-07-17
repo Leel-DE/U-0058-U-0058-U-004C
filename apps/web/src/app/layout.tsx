@@ -8,15 +8,18 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-sans', display: 'swa
 const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: 'Competitor Radar',
-  description: 'Ethical price intelligence for e-commerce SMBs.',
+  title: { default: 'Automation Hub', template: '%s — Automation Hub' },
+  description: 'Local-first browser automation for competition intelligence and shipment tracking.',
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'),
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${mono.variable}`}>
-      <body suppressHydrationWarning className="min-h-screen bg-background font-sans text-foreground antialiased">
+    <html lang="ru" suppressHydrationWarning className={`${inter.variable} ${mono.variable}`}>
+      <body
+        suppressHydrationWarning
+        className="bg-background text-foreground min-h-screen font-sans antialiased"
+      >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           {children}
           <Toaster position="top-right" richColors closeButton />

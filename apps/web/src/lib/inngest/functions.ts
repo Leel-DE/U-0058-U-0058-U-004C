@@ -1,7 +1,6 @@
 import { and, eq, lte } from 'drizzle-orm';
 import { inngest } from './client';
 import { db, schema } from '@/lib/db';
-import { runScrapeForProduct } from '@/server/scrape/run-product';
 import { evaluateNoChangeAlerts } from '@/server/alerts/evaluate';
 import { randomUUID } from 'node:crypto';
 
@@ -16,7 +15,10 @@ export const scheduleScraping = inngest.createFunction(
   async ({ step }) => {
     const dueStores = await step.run('find-due-stores', async () => {
       const rows = await db()
-        .selectDistinct({ orgId: schema.competitorProducts.orgId, storeId: schema.competitorProducts.storeId })
+        .selectDistinct({
+          orgId: schema.competitorProducts.orgId,
+          storeId: schema.competitorProducts.storeId,
+        })
         .from(schema.competitorProducts)
         .innerJoin(schema.stores, eq(schema.stores.id, schema.competitorProducts.storeId))
         .where(
@@ -51,9 +53,7 @@ export const scrapeStore = inngest.createFunction(
   {
     id: 'scrape-store',
     name: 'Scrape store (fan-out)',
-    concurrency: [
-      { key: 'event.data.storeId', limit: 1 },
-    ],
+    concurrency: [{ key: 'event.data.storeId', limit: 1 }],
   },
   { event: 'store.scrape.requested' },
   async ({ event, step }) => {
@@ -90,8 +90,7 @@ export const scrapeStore = inngest.createFunction(
         id: runId,
         orgId,
         storeId,
-        status: 'running',
-        startedAt: new Date(),
+        status: 'queued',
         productsTotal: products.length,
       });
     });
@@ -115,30 +114,27 @@ export const scrapeProduct = inngest.createFunction(
   {
     id: 'scrape-product',
     name: 'Scrape single product',
-    concurrency: [
-      { key: 'event.data.storeId', limit: 1 },
-    ],
+    concurrency: [{ key: 'event.data.storeId', limit: 1 }],
     retries: 3,
     throttle: { key: 'event.data.storeId', limit: 1, period: '3s' },
   },
   { event: 'product.scrape.requested' },
   async ({ event, step }) => {
     const { orgId, competitorProductId, runId } = event.data;
-    const result = await step.run('run', async () => {
-      return runScrapeForProduct({ orgId, competitorProductId, runId });
+    const result = await step.run('queue-browser-job', async () => {
+      const [job] = await db()
+        .insert(schema.automationJobs)
+        .values({
+          orgId,
+          type: 'competitor_scrape',
+          priority: 'normal',
+          payloadJson: { inputVersion: 1, competitorProductId, scrapeRunId: runId },
+          dedupeKey: `competitor:${competitorProductId}`,
+        })
+        .onConflictDoNothing()
+        .returning({ id: schema.automationJobs.id });
+      return { queued: Boolean(job), jobId: job?.id ?? null };
     });
-
-    if (runId) {
-      await step.run('update-run', async () => {
-        await db()
-          .update(schema.scrapeRuns)
-          .set({
-            productsOk: result.ok ? (1 as never) : (0 as never),
-            productsFailed: result.ok ? (0 as never) : (1 as never),
-          })
-          .where(eq(schema.scrapeRuns.id, runId));
-      });
-    }
     return result;
   },
 );
@@ -152,7 +148,9 @@ export const evaluateStateAlerts = inngest.createFunction(
   { id: 'evaluate-state-alerts', name: 'Evaluate state-based alerts (hourly)' },
   { cron: '0 * * * *' },
   async () => {
-    const orgs = await db().selectDistinct({ id: schema.organizations.id }).from(schema.organizations);
+    const orgs = await db()
+      .selectDistinct({ id: schema.organizations.id })
+      .from(schema.organizations);
     for (const { id: orgId } of orgs) {
       try {
         await evaluateNoChangeAlerts(orgId);

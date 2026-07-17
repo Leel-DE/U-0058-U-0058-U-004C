@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Plus,
   RefreshCw,
+  Box,
 } from 'lucide-react';
 import { getContext } from '@/lib/auth';
 import { formatCurrency, formatPct, timeAgo } from '@/lib/utils';
@@ -640,6 +641,12 @@ function QuickActions() {
         <Link href="/jobs">
           <RefreshCw className="mr-2 h-4 w-4" />
           Run scrape now
+        </Link>
+      </Button>
+      <Button asChild size="sm" variant="outline">
+        <Link href="/shipments">
+          <Box className="mr-2 h-4 w-4" />
+          Track shipment
         </Link>
       </Button>
       <Button asChild size="sm" variant="outline">

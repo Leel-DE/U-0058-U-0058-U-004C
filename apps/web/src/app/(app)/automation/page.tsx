@@ -8,8 +8,8 @@ export default function AutomationPage() {
       <header>
         <h1 className="text-balance text-2xl font-semibold tracking-tight">Automation Core</h1>
         <p className="text-muted-foreground max-w-[72ch] text-pretty text-base sm:text-sm">
-          Competition Radar supervises browser operations in the background. Closing this window
-          keeps the tray application and shipment monitor online.
+          Automation Hub supervises every browser operation in one local runtime. Closing this
+          window keeps the tray application, durable queue and adaptive scheduler online.
         </p>
       </header>
       <AutomationMonitor />

@@ -1,233 +1,187 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, AlertTriangle, CheckCircle2, Clock3, PackageSearch } from 'lucide-react';
+import { Activity, AlertTriangle, Bot, Cable as Bridge, Clock3, Cpu, Database } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-type MonitorState = 'disabled' | 'starting' | 'idle' | 'running' | 'stopping' | 'error';
-
-interface AutomationEvent {
-  id: string;
-  occurredAt: string;
-  event: string;
-  state: 'info' | 'queued' | 'running' | 'succeeded' | 'partial' | 'failed' | 'recovering';
-  message: string;
-  jobId?: string;
-  subjectId?: string;
-  metadata?: Record<string, string | number | boolean | null>;
-}
-
-interface MonitorStatus {
+interface RuntimeStatus {
   enabled: boolean;
-  state: MonitorState;
-  activeRun: { id: string; shipmentId: string; trigger: 'manual' | 'schedule' } | null;
-  lastOutcome: {
-    status: 'succeeded' | 'partial' | 'failed';
-    successfulSources: number;
-    presentationGenerated: boolean;
-    telegramDelivered: boolean;
-  } | null;
-  lastError: string | null;
-  lastReconciledAt: string | null;
+  state: 'disabled' | 'starting' | 'idle' | 'running' | 'stopping' | 'error';
+  activeJobs: string[];
+  concurrency: number;
   pollMs: number;
-  refreshIntervalMs: number;
+  lastTickAt: string | null;
+  lastError: string | null;
+  browser: { connected: boolean; mode: string; activeContexts: number };
+  torqueCoreBridge: { enabled: boolean; lastSyncAt?: string | null; lastError?: string | null };
 }
 
-interface AutomationPayload {
+interface RuntimeEvent {
+  id: string;
+  job_id: string;
+  level: string;
+  event: string;
+  message: string;
+  progress: number | null;
+  created_at: string;
+}
+
+interface Payload {
   ok: boolean;
-  shipmentTracking?: MonitorStatus;
-  events?: AutomationEvent[];
+  automationHub?: RuntimeStatus;
+  events?: RuntimeEvent[];
   message?: string;
 }
 
-function statusVariant(state: MonitorState) {
-  if (state === 'idle') return 'success' as const;
-  if (state === 'running' || state === 'starting') return 'warning' as const;
-  if (state === 'error') return 'destructive' as const;
-  return 'secondary' as const;
-}
-
-function eventVariant(state: AutomationEvent['state']) {
-  if (state === 'succeeded') return 'success' as const;
-  if (state === 'failed') return 'destructive' as const;
-  if (state === 'running' || state === 'partial' || state === 'recovering')
-    return 'warning' as const;
-  return 'secondary' as const;
-}
-
-function formatTime(value: string | null) {
-  if (!value) return 'Not yet';
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'short',
-    timeStyle: 'medium',
-  }).format(new Date(value));
+function formatTime(value?: string | null) {
+  return value
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' }).format(
+        new Date(value),
+      )
+    : 'Ещё не было';
 }
 
 export function AutomationMonitor() {
-  const [payload, setPayload] = useState<AutomationPayload | null>(null);
-  const [events, setEvents] = useState<AutomationEvent[]>([]);
+  const [payload, setPayload] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   const refresh = useCallback(async () => {
     try {
       const response = await fetch('/api/automation', { cache: 'no-store' });
-      const next = (await response.json()) as AutomationPayload;
-      if (!response.ok || !next.ok || !next.shipmentTracking) {
-        throw new Error(next.message ?? 'Automation status could not be loaded.');
-      }
+      const next = (await response.json()) as Payload;
+      if (!response.ok || !next.ok || !next.automationHub)
+        throw new Error(next.message ?? 'Runtime status is unavailable.');
       setPayload(next);
-      setEvents(next.events ?? []);
       setError(null);
-    } catch (refreshError) {
-      setError(
-        refreshError instanceof Error
-          ? refreshError.message
-          : 'Automation status could not be loaded.',
-      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Runtime status is unavailable.');
     }
   }, []);
-
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), 3_000);
     return () => window.clearInterval(timer);
   }, [refresh]);
-
-  const status = payload?.shipmentTracking;
-  if (!status && !error) {
+  const runtime = payload?.automationHub;
+  if (!runtime && !error)
     return (
-      <div className="border-border/70 text-muted-foreground flex items-center gap-2 border-y py-5 text-base sm:text-sm">
-        <Clock3 className="size-4 shrink-0" aria-hidden="true" />
-        <p>Loading automation status...</p>
-      </div>
+      <p className="text-muted-foreground flex items-center gap-2 text-sm">
+        <Clock3 className="h-4 w-4 animate-pulse" />
+        Загрузка состояния…
+      </p>
     );
-  }
-
   return (
     <div className="space-y-6">
       {error ? (
-        <div className="border-destructive/30 bg-destructive/5 flex items-start gap-3 border-y py-4 text-base sm:text-sm">
-          <AlertTriangle className="stroke-destructive size-4 shrink-0" aria-hidden="true" />
-          <p className="text-pretty">
-            {error} The desktop supervisor will reconnect automatically.
-          </p>
+        <div className="border-destructive/30 bg-destructive/10 flex gap-2 rounded-md border p-4 text-sm">
+          <AlertTriangle className="text-destructive h-4 w-4" />
+          {error}
         </div>
       ) : null}
-
-      {status ? (
+      {runtime ? (
         <>
-          <section aria-labelledby="runtime-status">
-            <div className="border-border/70 flex flex-wrap items-start justify-between gap-3 border-b pb-4">
-              <div className="min-w-0">
-                <h2 id="runtime-status" className="text-lg font-semibold">
-                  Shipment Tracking Runtime
-                </h2>
-                <p className="text-muted-foreground max-w-[72ch] text-pretty text-base sm:text-sm">
-                  Watches the TorqueCore queue, checks tracking pages sequentially, and stores
-                  confirmed results before the admin opens them.
-                </p>
-              </div>
-              <Badge variant={statusVariant(status.state)}>{status.state}</Badge>
-            </div>
-
-            <dl className="@container border-border/70 @md:grid-cols-3 mt-4 grid gap-0 border-y">
-              <div className="@md:pr-5 py-4">
-                <dt className="font-medium">Queue Reconciliation</dt>
-                <dd className="text-muted-foreground text-base sm:text-sm">
-                  Every <span className="tabular-nums">{status.pollMs / 1_000}</span> seconds
-                </dd>
-              </div>
-              <div className="border-border/70 @md:border-l @md:border-t-0 @md:px-5 border-t py-4">
-                <dt className="font-medium">Automatic Refresh</dt>
-                <dd className="text-muted-foreground text-base sm:text-sm">
-                  Every <span className="tabular-nums">{status.refreshIntervalMs / 3_600_000}</span>{' '}
-                  hours
-                </dd>
-              </div>
-              <div className="border-border/70 @md:border-l @md:border-t-0 @md:pl-5 border-t py-4">
-                <dt className="font-medium">Last Queue Check</dt>
-                <dd className="text-muted-foreground text-base tabular-nums sm:text-sm">
-                  {formatTime(status.lastReconciledAt)}
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          <section aria-labelledby="active-run">
-            <div className="flex items-center gap-2">
-              <PackageSearch
-                className="stroke-muted-foreground size-4 shrink-0"
-                aria-hidden="true"
-              />
-              <h2 id="active-run" className="text-lg font-semibold">
-                Current Work
-              </h2>
-            </div>
-            {status.activeRun ? (
-              <dl className="border-border/70 mt-3 grid gap-3 border-y py-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <Bot className="text-primary h-5 w-5" />
                 <div>
-                  <dt className="font-medium">Run</dt>
-                  <dd className="text-muted-foreground truncate font-mono text-base sm:text-sm">
-                    {status.activeRun.id}
-                  </dd>
+                  <Badge
+                    variant={
+                      runtime.state === 'idle'
+                        ? 'success'
+                        : runtime.state === 'error'
+                          ? 'destructive'
+                          : 'warning'
+                    }
+                  >
+                    {runtime.state}
+                  </Badge>
+                  <p className="text-muted-foreground mt-1 text-xs">Runtime</p>
                 </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <Cpu className="text-primary h-5 w-5" />
                 <div>
-                  <dt className="font-medium">Shipment</dt>
-                  <dd className="text-muted-foreground truncate font-mono text-base sm:text-sm">
-                    {status.activeRun.shipmentId}
-                  </dd>
+                  <p className="text-lg font-semibold">
+                    {runtime.activeJobs.length}/{runtime.concurrency}
+                  </p>
+                  <p className="text-muted-foreground text-xs">Активные слоты</p>
                 </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <Database className="text-primary h-5 w-5" />
                 <div>
-                  <dt className="font-medium">Trigger</dt>
-                  <dd className="text-muted-foreground text-base capitalize sm:text-sm">
-                    {status.activeRun.trigger}
-                  </dd>
+                  <p className="text-sm font-medium">{runtime.pollMs / 1000} сек.</p>
+                  <p className="text-muted-foreground text-xs">Проверка очереди</p>
                 </div>
-              </dl>
-            ) : (
-              <p className="border-border/70 text-muted-foreground mt-3 text-pretty border-y py-4 text-base sm:text-sm">
-                No shipment check is running. Radar is watching the queue.
-              </p>
-            )}
-          </section>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <Bridge className="text-primary h-5 w-5" />
+                <div>
+                  <Badge variant={runtime.torqueCoreBridge.enabled ? 'success' : 'secondary'}>
+                    {runtime.torqueCoreBridge.enabled ? 'connected' : 'optional'}
+                  </Badge>
+                  <p className="text-muted-foreground mt-1 text-xs">TorqueCore bridge</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Browser Automation Core</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 text-sm sm:grid-cols-3">
+              <div>
+                <p className="text-muted-foreground text-xs">Браузер</p>
+                <p>{runtime.browser.connected ? 'Подключён' : 'Ожидает задачу'}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs">Режим</p>
+                <p>{runtime.browser.mode}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs">Контексты</p>
+                <p>{runtime.browser.activeContexts}</p>
+              </div>
+            </CardContent>
+          </Card>
         </>
       ) : null}
-
-      <section aria-labelledby="recent-events">
-        <div className="flex items-center gap-2">
-          <Activity className="stroke-muted-foreground size-4 shrink-0" aria-hidden="true" />
-          <h2 id="recent-events" className="text-lg font-semibold">
-            Recent Events
-          </h2>
-        </div>
-        {events.length > 0 ? (
-          <ol className="divide-border/70 border-border/70 mt-3 divide-y border-y" role="list">
-            {[...events].reverse().map((event) => (
-              <li key={event.id} className="flex items-start gap-3 py-4">
-                <CheckCircle2
-                  className="stroke-muted-foreground size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Последние события
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {payload?.events?.length ? (
+            <ol className="space-y-4">
+              {[...payload.events].reverse().map((event) => (
+                <li key={event.id} className="border-primary/30 border-l-2 pl-4">
+                  <div className="flex items-center justify-between gap-3">
                     <p className="font-medium">{event.message}</p>
-                    <Badge variant={eventVariant(event.state)}>{event.state}</Badge>
+                    <span className="text-muted-foreground text-xs">{event.progress ?? 0}%</span>
                   </div>
-                  <p className="text-muted-foreground text-base tabular-nums sm:text-sm">
-                    {formatTime(event.occurredAt)}
-                    {event.jobId ? ` · Run ${event.jobId.slice(0, 8)}` : ''}
+                  <p className="text-muted-foreground text-xs">
+                    {event.event} · {formatTime(event.created_at)}
                   </p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="border-border/70 text-muted-foreground mt-3 text-pretty border-y py-4 text-base sm:text-sm">
-            No automation events yet. Queue a shipment check in TorqueCore to create the first
-            event.
-          </p>
-        )}
-      </section>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              Событий пока нет. Очередь готова принять первую задачу.
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

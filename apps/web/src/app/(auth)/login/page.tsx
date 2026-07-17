@@ -2,22 +2,26 @@ import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoginForm } from './login-form';
 
-export const metadata = { title: 'Sign in — Competitor Radar' };
+export const metadata = { title: 'Вход' };
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
   const params = await searchParams;
 
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
         <CardTitle>Welcome back</CardTitle>
-        <CardDescription>Sign in to your Competitor Radar account.</CardDescription>
+        <CardDescription>Войдите в локальный Automation Hub.</CardDescription>
       </CardHeader>
       <CardContent>
         <LoginForm searchParams={params} />
-        <p className="mt-4 text-center text-sm text-muted-foreground">
+        <p className="text-muted-foreground mt-4 text-center text-sm">
           Don&apos;t have an account?{' '}
-          <Link href="/signup" className="font-medium text-primary hover:underline">
+          <Link href="/signup" className="text-primary font-medium hover:underline">
             Create one
           </Link>
         </p>

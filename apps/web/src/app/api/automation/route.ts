@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     const events = await eventsResponse.json();
     return NextResponse.json({
       ok: true,
-      shipmentTracking: status.shipmentTracking,
+      automationHub: status.automationHub,
       events: events.events,
     });
   } catch {
