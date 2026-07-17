@@ -1,17 +1,16 @@
-import type { Browser, BrowserContext } from 'playwright';
-import { chromium } from 'playwright';
+import type { BrowserContext } from 'playwright';
 import type { FetchResult } from '../types.js';
+import { browserContextManager, browserLauncher } from '../automation/runtime-resources.js';
+import { PagePreparationService } from '../automation/page-handlers.js';
 
-let browser: Browser | null = null;
-let context: BrowserContext | null = null;
 let openPages = 0;
-
 const MAX_PAGES = Math.max(1, Number(process.env.WORKER_BROWSER_MAX_PAGES ?? 2));
+const preparation = new PagePreparationService();
 
 export function browserPoolStats() {
   return {
-    browserActive: Boolean(browser),
-    contextActive: Boolean(context),
+    ...browserLauncher.status(),
+    ...browserContextManager.status(),
     openPages,
     maxPages: MAX_PAGES,
   };
@@ -19,58 +18,25 @@ export function browserPoolStats() {
 
 export async function playwrightHealth() {
   const startedAt = Date.now();
-  const probe = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
-  });
-  await probe.close();
-  return {
-    ok: true,
-    durationMs: Date.now() - startedAt,
-    resources: browserPoolStats(),
-  };
-}
-
-async function getContext(userAgent: string): Promise<BrowserContext> {
-  if (!browser) {
-    browser = await chromium.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-background-networking',
-      ],
-    });
-  }
-  if (!context) {
-    context = await browser.newContext({
-      userAgent,
-      viewport: { width: 1366, height: 800 },
-      locale: 'en-US',
-    });
-    // Block heavy resources by default
-    await context.route('**/*', (route) => {
-      const type = route.request().resourceType();
-      if (type === 'image' || type === 'font' || type === 'media') return route.abort();
-      return route.continue();
-    });
-  }
-  return context;
+  await browserLauncher.getBrowser();
+  return { ok: true, durationMs: Date.now() - startedAt, resources: browserPoolStats() };
 }
 
 export interface BrowserFetchOptions {
   storageStateJson?: string;
-  /** CSS selector for a container that should have at least 1 child once the
-   *  JS-rendered listing is ready. Playwright waits up to `waitForChildrenMs`
-   *  (default 8 s) for `document.querySelector(sel).children.length > 0`.
-   *  Use this for Tilda/Shopify/InSales/Bitrix SPA shells. */
   waitForChildrenIn?: string;
   waitForChildrenMs?: number;
-  /** Scroll to the bottom in a few steps to trigger lazy-loaded content
-   *  (Tilda paginates with "load more" on scroll). Disabled by default. */
   scrollToBottom?: boolean;
+}
+
+async function acquireContext(
+  userAgent: string,
+  storageStateJson?: string,
+): Promise<BrowserContext> {
+  return browserContextManager.create({
+    userAgent,
+    storageState: storageStateJson ? JSON.parse(storageStateJson) : undefined,
+  });
 }
 
 export async function fetchHtmlBrowser(
@@ -79,117 +45,56 @@ export async function fetchHtmlBrowser(
   timeoutMs: number,
   optsOrStorage?: BrowserFetchOptions | string,
 ): Promise<FetchResult> {
-  const opts: BrowserFetchOptions =
-    typeof optsOrStorage === 'string'
-      ? { storageStateJson: optsOrStorage }
-      : optsOrStorage ?? {};
-  const t0 = Date.now();
-  const ctx = opts.storageStateJson
-    ? await chromium.launch({ headless: true }).then((b) =>
-        b.newContext({
-          userAgent,
-          viewport: { width: 1366, height: 800 },
-          locale: 'en-US',
-          storageState: JSON.parse(opts.storageStateJson!) as never,
-        }),
-      )
-    : await getContext(userAgent);
-  while (openPages >= MAX_PAGES) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
+  const opts =
+    typeof optsOrStorage === 'string' ? { storageStateJson: optsOrStorage } : (optsOrStorage ?? {});
+  const startedAt = Date.now();
+  while (openPages >= MAX_PAGES) await new Promise((resolve) => setTimeout(resolve, 50));
   openPages += 1;
-  const page = await ctx.newPage();
+  const context = await acquireContext(userAgent, opts.storageStateJson);
+  const page = await context.newPage();
   try {
-    const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
-    const status = resp?.status() ?? 0;
-
-    // Accept cookies and close ad banners
-    await page.evaluate(() => {
-      try {
-        const textMatches = ['accept', 'принять', 'понятно', 'agree', 'согласен', 'ok', 'got it', 'close', 'закрыть'];
-        const elements = document.querySelectorAll('button, a, [role="button"]');
-        for (const el of elements) {
-          const text = (el.textContent || '').trim().toLowerCase();
-          const hasText = text && textMatches.some(m => text.includes(m));
-          const isCookieBtn = el.matches('[class*="cookie" i], [id*="cookie" i]');
-          if (hasText || isCookieBtn) {
-            try { (el as HTMLElement).click(); } catch(e) {}
-          }
-        }
-        // Remove fixed overlays that might block content (banners, modals)
-        const overlays = document.querySelectorAll('[class*="cookie" i], [id*="cookie" i], [class*="banner" i], [id*="banner" i], [class*="popup" i], [id*="popup" i], .modal, .overlay');
-        for (const el of overlays) {
-          const style = window.getComputedStyle(el);
-          if (style.position === 'fixed' || style.position === 'sticky' || parseInt(style.zIndex || '0', 10) > 50) {
-            el.remove();
-          }
-        }
-      } catch (e) {}
-    }).catch(() => null);
-
-    // small wait for client-side rendered prices to appear
-    await page
-      .waitForLoadState('networkidle', { timeout: Math.min(8_000, timeoutMs / 2) })
-      .catch(() => null);
-
-    // SPA-list wait: stay on the page until the empty product-list container
-    // we detected actually has children. This is the difference between
-    // "Tilda DOM ready" and "Tilda AJAX has populated the list".
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    await preparation.prepare(page);
     if (opts.waitForChildrenIn) {
-      const sel = opts.waitForChildrenIn;
-      const waitMs = opts.waitForChildrenMs ?? 8_000;
       await page
         .waitForFunction(
-          (s) => {
-            const root = document.querySelector(s);
-            return !!root && root.children.length > 0;
-          },
-          sel,
-          { timeout: waitMs, polling: 250 },
+          (selector) => Boolean(document.querySelector(selector)?.children.length),
+          opts.waitForChildrenIn,
+          { timeout: opts.waitForChildrenMs ?? 8_000, polling: 250 },
         )
-        .catch(() => null);
+        .catch(() => undefined);
     }
-
     if (opts.scrollToBottom) {
-      // Three small scroll steps with delays — triggers Tilda's
-      // 'load more on scroll' without burning many CPU cycles.
       await page
         .evaluate(async () => {
-          const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-          for (let i = 0; i < 3; i++) {
+          for (let step = 0; step < 3; step += 1) {
             window.scrollTo(0, document.body.scrollHeight);
-            await sleep(700);
+            await new Promise((resolve) => setTimeout(resolve, 700));
           }
         })
-        .catch(() => null);
-      await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => null);
+        .catch(() => undefined);
     }
-
     const html = await page.content();
     const screenshotBase64 = await page
-      .screenshot({ type: 'jpeg', quality: 60, fullPage: false })
-      .then((buffer) => buffer.toString('base64'))
+      .screenshot({ type: 'jpeg', quality: 60 })
+      .then((value) => value.toString('base64'))
       .catch(() => undefined);
     return {
-      status,
+      status: response?.status() ?? 0,
       html,
       screenshotBase64,
       finalUrl: page.url(),
-      durationMs: Date.now() - t0,
+      durationMs: Date.now() - startedAt,
       strategy: 'playwright',
     };
   } finally {
-    // Clear cookies to prevent tracking and state buildup across scrapes
-    await ctx.clearCookies().catch(() => null);
-    await page.close().catch(() => null);
-    if (opts.storageStateJson) await ctx.browser()?.close().catch(() => null);
+    await page.close().catch(() => undefined);
+    await browserContextManager.close(context);
     openPages = Math.max(0, openPages - 1);
   }
 }
 
 export async function closePlaywright() {
-  await context?.close().catch(() => null);
-  await browser?.close().catch(() => null);
-  context = null;
-  browser = null;
+  await browserContextManager.closeAll();
+  await browserLauncher.close();
 }

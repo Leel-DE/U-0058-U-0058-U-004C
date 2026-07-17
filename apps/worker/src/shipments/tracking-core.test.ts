@@ -61,6 +61,16 @@ test('recognizes common label-created wording', () => {
   );
 });
 
+test('uses the first concrete event instead of delivered wording in SEO copy', () => {
+  assert.deepEqual(
+    classifyTrackingPage({
+      text: `${trackingNumber}\nInfo Received\nShipper created a label\nTrack parcels until they are delivered`,
+      trackingNumber,
+    }),
+    { state: 'success', statusHint: 'registered' },
+  );
+});
+
 test('rejects unrelated demo data even when it looks like tracking history', () => {
   assert.deepEqual(
     classifyTrackingPage({

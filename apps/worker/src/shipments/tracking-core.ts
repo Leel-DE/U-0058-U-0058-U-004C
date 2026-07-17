@@ -6,6 +6,7 @@ export const shipmentTrackingSourceIdSchema = z.enum([
   'parcelsapp',
   'ship24',
   '17track',
+  'yanwen',
 ]);
 
 export type ShipmentTrackingSourceId = z.infer<typeof shipmentTrackingSourceIdSchema>;
@@ -178,11 +179,19 @@ export function classifyTrackingPage(input: {
     return { state: 'irrelevant', statusHint: null };
   }
 
+  // Tracking pages often append generic SEO copy containing words such as
+  // "delivered" below the actual result. Prefer the first concrete status
+  // phrase in rendered result order instead of the most terminal status.
+  let nearest: { statusHint: ShipmentTrackingStatusHint; index: number } | null = null;
   for (const [statusHint, patterns] of STATUS_PATTERNS) {
-    if (patterns.some((pattern) => pattern.test(text))) {
-      return { state: 'success', statusHint };
+    for (const pattern of patterns) {
+      const match = pattern.exec(text);
+      if (match && (!nearest || match.index < nearest.index))
+        nearest = { statusHint, index: match.index };
+      pattern.lastIndex = 0;
     }
   }
+  if (nearest) return { state: 'success', statusHint: nearest.statusHint };
 
   return { state: 'irrelevant', statusHint: null };
 }
