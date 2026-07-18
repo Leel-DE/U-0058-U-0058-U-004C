@@ -199,6 +199,23 @@ export class TorqueCoreShipmentBridge {
         const localShipmentId =
           localByRemoteId.get(run.shipment_id) ?? (await this.importShipment(remoteShipment));
         const settings = await this.shipmentSettings(localShipmentId);
+        // Claim the remote run atomically BEFORE inserting the local job. If
+        // another consumer took it first (zero rows updated), skip it — this
+        // guarantees each run is executed exactly once even when a second
+        // consumer is watching the same queue.
+        const { data: claimed, error: claimError } = await this.remote
+          .from('shipment_tracking_runs')
+          .update({
+            status: 'running',
+            started_at: new Date().toISOString(),
+            error_summary: null,
+          })
+          .eq('id', run.id)
+          .eq('status', 'queued')
+          .select('id')
+          .maybeSingle();
+        if (claimError) throw claimError;
+        if (!claimed) continue;
         const { error: queueError } = await this.local.from('automation_jobs').insert({
           org_id: this.orgId,
           type: 'shipment_tracking',
@@ -216,17 +233,15 @@ export class TorqueCoreShipmentBridge {
           },
           dedupe_key: `torquecore-run:${run.id}`,
         });
-        if (queueError?.code !== '23505' && queueError) throw queueError;
-        if (!queueError) {
+        if (queueError && queueError.code !== '23505') {
+          // The local insert failed after we claimed the run — release it so
+          // the next sync (or another consumer) can pick it up again.
           await this.remote
             .from('shipment_tracking_runs')
-            .update({
-              status: 'running',
-              started_at: new Date().toISOString(),
-              error_summary: null,
-            })
+            .update({ status: 'queued', started_at: null })
             .eq('id', run.id)
-            .eq('status', 'queued');
+            .eq('status', 'running');
+          throw queueError;
         }
       }
 

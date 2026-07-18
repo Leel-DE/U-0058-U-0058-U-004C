@@ -65,7 +65,10 @@ import { analyzeStore } from './discovery/store-analyzer.js';
 import { runProductSelectorRepair } from './repair/selector-repair-runner.js';
 import { selectorRepairRequestSchema } from './repair/selector-repair-types.js';
 import { automationRuntimeSupervisor } from './automation/runtime-supervisor.js';
-import { shipmentTrackingMonitor } from './shipments/monitor.js';
+import {
+  shipmentTrackingMonitor,
+  shouldRunCanonicalShipmentMonitor,
+} from './shipments/monitor.js';
 
 const logger = pino({ name: 'cr-worker', level: process.env.LOG_LEVEL ?? 'info' });
 const PORT = Number(process.env.PORT ?? 4000);
@@ -1425,9 +1428,16 @@ app
     startSessionCleanup();
     await automationRuntimeSupervisor.start();
     // Canonical TorqueCore shipment tracking: watches the durable
-    // shipment_tracking_runs queue and sends a Telegram update on every check.
-    // Self-gated — stays disabled until TORQUECORE_SUPABASE_* is configured.
-    await shipmentTrackingMonitor.start();
+    // shipment_tracking_runs queue directly. It must NOT run alongside the
+    // Automation-Hub bridge (which mirrors the same queue into local jobs) —
+    // two consumers double every check. See shouldRunCanonicalShipmentMonitor.
+    if (shouldRunCanonicalShipmentMonitor(process.env)) {
+      await shipmentTrackingMonitor.start();
+    } else {
+      logger.info(
+        'canonical shipment monitor skipped: TorqueCore bridge owns the run queue (set TORQUECORE_CANONICAL_MONITOR=true to force)',
+      );
+    }
   })
   .catch((err) => {
     logger.error(err);

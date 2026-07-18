@@ -45,6 +45,29 @@ const config = {
   staleRunningMs: duration('TORQUECORE_SHIPMENT_STALE_RUNNING_MS', 1_200_000, 60_000),
 };
 
+/**
+ * The TorqueCore run queue must have exactly ONE consumer. When the
+ * Automation-Hub bridge is configured (TORQUECORE_AUTOMATION_ORG_ID), it
+ * mirrors queued runs into the local durable queue and owns their execution —
+ * running this canonical monitor alongside it doubles every check and floods
+ * the job list. The monitor therefore only starts when the bridge is not
+ * configured, unless TORQUECORE_CANONICAL_MONITOR=true forces it on.
+ */
+export function shouldRunCanonicalShipmentMonitor(env: {
+  TORQUECORE_SUPABASE_URL?: string;
+  TORQUECORE_SUPABASE_SERVICE_ROLE_KEY?: string;
+  TORQUECORE_AUTOMATION_ORG_ID?: string;
+  TORQUECORE_CANONICAL_MONITOR?: string;
+}): boolean {
+  const hasCredentials = Boolean(
+    env.TORQUECORE_SUPABASE_URL?.trim() && env.TORQUECORE_SUPABASE_SERVICE_ROLE_KEY?.trim(),
+  );
+  if (!hasCredentials) return false;
+  if (env.TORQUECORE_CANONICAL_MONITOR?.trim().toLowerCase() === 'true') return true;
+  const bridgeConfigured = Boolean(env.TORQUECORE_AUTOMATION_ORG_ID?.trim());
+  return !bridgeConfigured;
+}
+
 export class ShipmentTrackingMonitor {
   private readonly enabled = Boolean(config.url && config.serviceRoleKey);
   private readonly client = this.enabled
