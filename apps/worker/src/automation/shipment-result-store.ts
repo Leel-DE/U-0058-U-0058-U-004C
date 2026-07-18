@@ -87,13 +87,16 @@ export class ShipmentResultStore {
     const shipmentId = String(result.shipmentId);
     const { data: shipment, error: readError } = await this.client
       .from('shipments')
-      .select('current_status, tracking_number')
+      .select('current_status, tracking_number, check_interval_override_minutes')
       .eq('id', shipmentId)
       .eq('org_id', job.orgId)
       .single();
     if (readError) throw readError;
     const status = String(result.status ?? 'unknown');
-    const schedule = nextShipmentCheck(status);
+    const schedule = nextShipmentCheck(
+      status,
+      shipment.check_interval_override_minutes as number | null,
+    );
     const providers = Array.isArray(result.providers)
       ? (result.providers as Array<Record<string, unknown>>)
       : [];

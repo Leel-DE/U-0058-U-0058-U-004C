@@ -5,6 +5,13 @@ import { Loader2, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { updateShipmentTrackingSettings } from '@/server/actions/shipments';
 
@@ -13,7 +20,19 @@ interface TrackingSettings {
   forceJavaScript: boolean;
   useAi: boolean;
   useManualCaptcha: boolean;
+  /** Fixed interval in minutes; null = adaptive (from status). */
+  checkIntervalMinutes: number | null;
 }
+
+const INTERVAL_OPTIONS = [
+  { value: 'auto', label: 'Автоматически (по статусу)' },
+  { value: '30', label: 'Каждые 30 минут' },
+  { value: '60', label: 'Каждый час' },
+  { value: '180', label: 'Каждые 3 часа' },
+  { value: '360', label: 'Каждые 6 часов' },
+  { value: '720', label: 'Каждые 12 часов' },
+  { value: '1440', label: 'Раз в сутки' },
+] as const;
 
 export function TrackingSettingsForm({
   shipmentId,
@@ -32,6 +51,34 @@ export function TrackingSettingsForm({
 
   return (
     <div className="space-y-4">
+      <div className="rounded-md border p-3">
+        <Label htmlFor="shipmentCheckInterval">Частота проверки</Label>
+        <p className="text-muted-foreground mt-1 text-xs">
+          «Автоматически» подстраивает интервал под статус (в пути — каждые 3 часа, на таможне —
+          каждый час). Фиксированное значение применяется сразу.
+        </p>
+        <Select
+          value={value.checkIntervalMinutes ? String(value.checkIntervalMinutes) : 'auto'}
+          onValueChange={(selected) =>
+            setValue((current) => ({
+              ...current,
+              checkIntervalMinutes: selected === 'auto' ? null : Number(selected),
+            }))
+          }
+          disabled={pending}
+        >
+          <SelectTrigger id="shipmentCheckInterval" className="mt-2 w-full sm:w-64">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {INTERVAL_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Setting
           id="shipmentRespectRobots"

@@ -256,6 +256,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 forceJavaScript: shipment.forceJavaScript,
                 useAi: shipment.useAi,
                 useManualCaptcha: shipment.useManualCaptcha,
+                checkIntervalMinutes: shipment.checkIntervalOverrideMinutes,
               }}
             />
           </CardContent>
@@ -272,7 +273,10 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
         <CardContent className="grid gap-3 text-sm sm:grid-cols-3">
           <div>
             <p className="text-muted-foreground text-xs">Интервал</p>
-            <p>{shipment.checkIntervalMinutes} мин.</p>
+            <p>
+              {shipment.checkIntervalMinutes} мин.
+              {shipment.checkIntervalOverrideMinutes ? ' (фиксированный)' : ' (авто)'}
+            </p>
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Следующая проверка</p>

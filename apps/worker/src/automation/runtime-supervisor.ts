@@ -45,6 +45,10 @@ export class RuntimeSupervisor {
     Math.min(4, Number(process.env.AUTOMATION_CONCURRENCY ?? 4)),
   );
   private readonly pollMs = Math.max(1_000, Number(process.env.AUTOMATION_QUEUE_POLL_MS ?? 3_000));
+  private readonly jobHistoryPerShipment = Math.max(
+    1,
+    Math.min(50, Number(process.env.AUTOMATION_JOB_HISTORY_PER_SHIPMENT ?? 3)),
+  );
 
   constructor() {
     this.executor.register('shipment_tracking', createShipmentTrackingHandler());
@@ -95,6 +99,9 @@ export class RuntimeSupervisor {
       if (now - this.lastScheduleAt > 60_000) {
         await this.lease.recoverStale();
         await this.scheduler.enqueueDueShipments();
+        // Fresh jobs replace stale history: keep only the newest finished
+        // checks per shipment so the job list never piles up.
+        await this.scheduler.pruneFinishedShipmentJobs(this.jobHistoryPerShipment);
         this.lastScheduleAt = now;
       }
       while (this.active.size < this.concurrency) {

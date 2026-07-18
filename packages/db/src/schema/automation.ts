@@ -77,6 +77,8 @@ export const shipments = pgTable(
     nextCheckAt: timestamp('next_check_at', { withTimezone: true }).defaultNow(),
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     checkIntervalMinutes: integer('check_interval_minutes').default(360).notNull(),
+    // Operator-chosen fixed interval. null = adaptive (derived from status).
+    checkIntervalOverrideMinutes: integer('check_interval_override_minutes'),
     metadataJson: jsonb('metadata_json').$type<Record<string, unknown>>().default({}).notNull(),
     createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

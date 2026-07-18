@@ -34,6 +34,8 @@ const trackingSettingsSchema = z.object({
   forceJavaScript: z.boolean(),
   useAi: z.boolean(),
   useManualCaptcha: z.boolean(),
+  /** Fixed check interval in minutes; null keeps the adaptive schedule. */
+  checkIntervalMinutes: z.number().int().min(15).max(10_080).nullable().default(null),
 });
 
 const manualSessionRefSchema = z.object({
@@ -282,6 +284,16 @@ export const updateShipmentTrackingSettings = defineAction(
         forceJavaScript: input.forceJavaScript,
         useAi: input.useAi,
         useManualCaptcha: input.useManualCaptcha,
+        checkIntervalOverrideMinutes: input.checkIntervalMinutes,
+        // A pinned interval reschedules the next check from now, so the chosen
+        // cadence takes effect immediately. Adaptive mode keeps the current
+        // schedule until the next completed check recomputes it from status.
+        ...(input.checkIntervalMinutes
+          ? {
+              checkIntervalMinutes: input.checkIntervalMinutes,
+              nextCheckAt: new Date(Date.now() + input.checkIntervalMinutes * 60_000),
+            }
+          : {}),
         updatedAt: new Date(),
       })
       .where(
@@ -300,6 +312,7 @@ export const updateShipmentTrackingSettings = defineAction(
         forceJavaScript: input.forceJavaScript,
         useAi: input.useAi,
         useManualCaptcha: input.useManualCaptcha,
+        checkIntervalMinutes: input.checkIntervalMinutes,
       },
     });
     revalidatePath(`/shipments/${shipment.id}`);
