@@ -162,7 +162,7 @@ export const createAnalyzedStoreSchema = z.object({
       .default(DEFAULT_CRAWL_DELAY_SECONDS),
     respectRobots: z.boolean().default(true),
     jsRequired: z.boolean().default(false),
-    useManualCaptcha: z.boolean().default(true),
+    useManualCaptcha: z.boolean().default(false),
     useAi: z.boolean().default(false),
     discoveryPreset: z.enum(['quick', 'normal', 'deep', 'full']).default('normal'),
     discoveryDefaultsJson: z.record(z.unknown()).default({}),

@@ -29,6 +29,7 @@
     "inngest:dev": "pnpm dev:inngest",
     "worker:dev": "pnpm dev:worker",
     "web:dev": "pnpm dev:web",
+    "capture:browser-storage": "node apps/worker/scripts/capture-browser-storage.mjs",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",

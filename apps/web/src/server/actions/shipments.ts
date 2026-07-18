@@ -25,7 +25,7 @@ const createShipmentSchema = z.object({
   respectRobotsTxt: z.boolean().default(false),
   forceJavaScript: z.boolean().default(true),
   useAi: z.boolean().default(true),
-  useManualCaptcha: z.boolean().default(true),
+  useManualCaptcha: z.boolean().default(false),
 });
 
 const trackingSettingsSchema = z.object({
@@ -181,7 +181,7 @@ export const bulkCreateShipments = defineAction(
             respectRobotsTxt: false,
             forceJavaScript: true,
             useAi: true,
-            useManualCaptcha: true,
+            useManualCaptcha: false,
             createdBy: ctx.user.id,
           });
         await tx
@@ -196,7 +196,7 @@ export const bulkCreateShipments = defineAction(
                 respectRobotsTxt: false,
                 forceJavaScript: true,
                 useAi: true,
-                useManualCaptcha: true,
+                useManualCaptcha: false,
               },
             }),
           );

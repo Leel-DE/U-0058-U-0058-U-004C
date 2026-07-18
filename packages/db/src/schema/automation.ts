@@ -64,7 +64,7 @@ export const shipments = pgTable(
     respectRobotsTxt: boolean('respect_robots_txt').default(false).notNull(),
     forceJavaScript: boolean('force_javascript').default(true).notNull(),
     useAi: boolean('use_ai').default(true).notNull(),
-    useManualCaptcha: boolean('use_manual_captcha').default(true).notNull(),
+    useManualCaptcha: boolean('use_manual_captcha').default(false).notNull(),
     currentStatus: shipmentStatusEnum('current_status').default('pending').notNull(),
     previousStatus: shipmentStatusEnum('previous_status'),
     statusTitle: text('status_title'),

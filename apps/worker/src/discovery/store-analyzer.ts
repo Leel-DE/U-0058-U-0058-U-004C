@@ -290,7 +290,9 @@ function recommendedSettings(profile: ScrapeProfile, rendering: RenderingStrateg
     crawlDelaySeconds: profile.recommendedDelaySeconds,
     respectRobots,
     jsRequired: rendering.scrapingMode === 'playwright_primary',
-    useManualCaptcha: profile.antiBotRisk !== 'low',
+    // Manual CAPTCHA solving is opt-in — default it off even for higher-risk
+    // stores. Operators can still enable it per store/run in the UI.
+    useManualCaptcha: false,
     useAi,
     discoveryPreset: heavy ? 'full' : deep ? 'deep' : 'normal',
     discoveryDefaultsJson: {
@@ -302,7 +304,7 @@ function recommendedSettings(profile: ScrapeProfile, rendering: RenderingStrateg
       concurrency: safe ? 1 : 2,
       respectRobotsTxt: respectRobots,
       useAi,
-      useManualCaptcha: profile.antiBotRisk !== 'low',
+      useManualCaptcha: false,
     },
   };
 }

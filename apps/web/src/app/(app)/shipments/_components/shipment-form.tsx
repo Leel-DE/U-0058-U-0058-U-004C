@@ -16,7 +16,7 @@ export function ShipmentForm() {
   const [respectRobotsTxt, setRespectRobotsTxt] = useState(false);
   const [forceJavaScript, setForceJavaScript] = useState(true);
   const [useAi, setUseAi] = useState(true);
-  const [useManualCaptcha, setUseManualCaptcha] = useState(true);
+  const [useManualCaptcha, setUseManualCaptcha] = useState(false);
 
   return (
     <form

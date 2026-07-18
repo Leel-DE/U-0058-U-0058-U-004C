@@ -1,7 +1,14 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { chromium, type Browser, type Frame, type Locator, type Page } from 'playwright';
+import {
+  chromium,
+  type Browser,
+  type BrowserContextOptions,
+  type Frame,
+  type Locator,
+  type Page,
+} from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 
@@ -51,6 +58,11 @@ const browserEnvironmentSchema = z.object({
     .optional(),
   PLAYWRIGHT_PROXY_USERNAME: z.string().trim().min(1).optional(),
   PLAYWRIGHT_PROXY_PASSWORD: z.string().min(1).optional(),
+  // Optional path to a browser-storage snapshot (cookies + localStorage +
+  // sessionStorage) captured from the operator's own browser. When present it
+  // is hydrated into every tracking source context so logged-in sessions,
+  // consent choices and anti-bot clearance cookies help the parse succeed.
+  TORQUECORE_BROWSER_STORAGE_STATE_PATH: z.string().trim().min(1).optional(),
 });
 
 const environmentSchema = browserEnvironmentSchema.extend({
@@ -186,7 +198,62 @@ function readBrowserEnvironmentInput() {
     PLAYWRIGHT_PROXY_SERVER: process.env.PLAYWRIGHT_PROXY_SERVER || undefined,
     PLAYWRIGHT_PROXY_USERNAME: process.env.PLAYWRIGHT_PROXY_USERNAME || undefined,
     PLAYWRIGHT_PROXY_PASSWORD: process.env.PLAYWRIGHT_PROXY_PASSWORD || undefined,
+    TORQUECORE_BROWSER_STORAGE_STATE_PATH:
+      process.env.TORQUECORE_BROWSER_STORAGE_STATE_PATH || undefined,
   };
+}
+
+const browserStorageSnapshotSchema = z.object({
+  storageState: z
+    .object({
+      cookies: z.array(z.any()).default([]),
+      origins: z.array(z.any()).default([]),
+    })
+    .default({ cookies: [], origins: [] }),
+  sessionStorage: z
+    .array(
+      z.object({
+        origin: z.string(),
+        items: z.array(z.object({ name: z.string(), value: z.string() })).default([]),
+      }),
+    )
+    .default([]),
+});
+
+type LoadedBrowserStorage = {
+  storageState: { cookies: unknown[]; origins: unknown[] };
+  sessionStorage: Array<{ origin: string; items: Array<{ name: string; value: string }> }>;
+};
+
+/**
+ * Load an operator-captured browser-storage snapshot from disk. Cookies and
+ * localStorage ride along in Playwright's native `storageState` shape;
+ * sessionStorage is captured separately and hydrated per origin via an init
+ * script (Playwright's storageState format does not carry sessionStorage).
+ * Missing or malformed files degrade gracefully to "no snapshot".
+ */
+async function loadBrowserStorageSnapshot(
+  path: string | undefined,
+): Promise<LoadedBrowserStorage | null> {
+  if (!path) return null;
+  try {
+    const parsed = browserStorageSnapshotSchema.parse(JSON.parse(await readFile(path, 'utf8')));
+    const hasCookies = parsed.storageState.cookies.length > 0;
+    const hasLocalStorage = parsed.storageState.origins.length > 0;
+    const hasSessionStorage = parsed.sessionStorage.length > 0;
+    if (!hasCookies && !hasLocalStorage && !hasSessionStorage) return null;
+    return { storageState: parsed.storageState, sessionStorage: parsed.sessionStorage };
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        job: 'shipment_tracking_browser_storage',
+        event: 'snapshot_load_failed',
+        path,
+        error: error instanceof Error ? error.message.slice(0, 300) : 'unknown',
+      }),
+    );
+    return null;
+  }
 }
 
 function readEnvironment() {
@@ -615,6 +682,7 @@ async function inspectSource(
   trackingNumber: string,
   diagnosticsDir?: string,
   attemptLabel?: string,
+  browserStorage?: LoadedBrowserStorage | null,
 ): Promise<ShipmentTrackingSourceResult> {
   const checkedAt = new Date().toISOString();
   sourceDebugNotes.length = 0;
@@ -633,12 +701,46 @@ async function inspectSource(
     };
   }
 
+  const hasStorageState = Boolean(
+    browserStorage &&
+      (browserStorage.storageState.cookies.length > 0 ||
+        browserStorage.storageState.origins.length > 0),
+  );
   const context = await browser.newContext({
     locale: 'en-US',
     timezoneId: 'America/New_York',
     viewport: { width: 1366, height: 768 },
     extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
+    // Hydrate the operator's captured cookies + localStorage natively.
+    ...(hasStorageState
+      ? {
+          storageState: browserStorage!.storageState as BrowserContextOptions['storageState'],
+        }
+      : {}),
   });
+  // sessionStorage is not part of Playwright's storageState, so replay it per
+  // origin with an init script that runs before the page's own scripts.
+  if (browserStorage?.sessionStorage.length) {
+    await context.addInitScript((origins: LoadedBrowserStorage['sessionStorage']) => {
+      try {
+        const match = origins.find((entry) => entry.origin === window.location.origin);
+        if (!match) return;
+        for (const item of match.items) {
+          window.sessionStorage.setItem(item.name, item.value);
+        }
+      } catch {
+        // Best-effort hydration only.
+      }
+    }, browserStorage.sessionStorage);
+  }
+  if (attemptLabel && (hasStorageState || browserStorage?.sessionStorage.length)) {
+    noteDebug(
+      `${source.id}: hydrated operator browser storage ` +
+        `(cookies=${browserStorage?.storageState.cookies.length ?? 0}, ` +
+        `origins=${browserStorage?.storageState.origins.length ?? 0}, ` +
+        `sessionStorageOrigins=${browserStorage?.sessionStorage.length ?? 0})`,
+    );
+  }
   const page = await context.newPage();
   context.on('page', (candidate) => {
     if (candidate === page) return;
@@ -766,6 +868,7 @@ async function inspectSourceWithRetries(
   source: SourceDefinition,
   trackingNumber: string,
   diagnosticsDir?: string,
+  browserStorage?: LoadedBrowserStorage | null,
 ): Promise<ShipmentTrackingSourceResult> {
   let lastResult: ShipmentTrackingSourceResult | null = null;
   for (let attempt = 1; attempt <= MAX_SOURCE_ATTEMPTS; attempt += 1) {
@@ -775,6 +878,7 @@ async function inspectSourceWithRetries(
       trackingNumber,
       diagnosticsDir,
       `attempt ${attempt}/${MAX_SOURCE_ATTEMPTS}`,
+      browserStorage,
     );
     if (!RETRYABLE_SOURCE_STATES.has(lastResult.state)) return lastResult;
     if (attempt < MAX_SOURCE_ATTEMPTS) {
@@ -938,12 +1042,21 @@ async function runDiagnostics(args: { trackingNumber: string; diagnosticsDir: st
   const environment = browserEnvironmentSchema.parse(readBrowserEnvironmentInput());
   await mkdir(args.diagnosticsDir, { recursive: true });
 
+  const browserStorage = await loadBrowserStorageSnapshot(
+    environment.TORQUECORE_BROWSER_STORAGE_STATE_PATH,
+  );
   const { browser, channel } = await launchWorkerBrowser(environment);
   const results: ShipmentTrackingSourceResult[] = [];
   try {
     for (const source of buildSources(args.trackingNumber)) {
       results.push(
-        await inspectSourceWithRetries(browser, source, args.trackingNumber, args.diagnosticsDir),
+        await inspectSourceWithRetries(
+          browser,
+          source,
+          args.trackingNumber,
+          args.diagnosticsDir,
+          browserStorage,
+        ),
       );
     }
   } finally {
@@ -954,6 +1067,7 @@ async function runDiagnostics(args: { trackingNumber: string; diagnosticsDir: st
     job: 'shipment_tracking_diagnostics',
     browserChannel: channel,
     browserProxyConfigured: Boolean(environment.PLAYWRIGHT_PROXY_SERVER),
+    browserStorageSnapshotApplied: Boolean(browserStorage),
     sources: results.map((result) => ({
       source: result.source,
       state: result.state,
@@ -1036,10 +1150,15 @@ export async function runShipmentTracking(args: {
   if (shipmentError) throw shipmentError;
   const shipment = shipmentRowSchema.parse(shipmentData);
 
+  const browserStorage = await loadBrowserStorageSnapshot(
+    environment.TORQUECORE_BROWSER_STORAGE_STATE_PATH,
+  );
   const { browser, channel: browserChannel } = await launchWorkerBrowser(environment);
   await args.onProgress?.({
     event: 'browser_started',
-    message: `Browser started with ${browserChannel}.`,
+    message: browserStorage
+      ? `Browser started with ${browserChannel} (operator storage snapshot applied).`
+      : `Browser started with ${browserChannel}.`,
   });
   let results: ShipmentTrackingSourceResult[] = [];
   try {
@@ -1050,7 +1169,13 @@ export async function runShipmentTracking(args: {
         source: source.id,
         sourceLabel: source.label,
       });
-      const result = await inspectSourceWithRetries(browser, source, shipment.tracking_number);
+      const result = await inspectSourceWithRetries(
+        browser,
+        source,
+        shipment.tracking_number,
+        undefined,
+        browserStorage,
+      );
       results.push(result);
       await args.onProgress?.({
         event: 'source_completed',
@@ -1208,6 +1333,7 @@ export async function runShipmentTracking(args: {
       browserChannel,
       browserHeadless: environment.PLAYWRIGHT_HEADLESS === 'true',
       browserProxyConfigured: Boolean(environment.PLAYWRIGHT_PROXY_SERVER),
+      browserStorageSnapshotApplied: Boolean(browserStorage),
       telegramNotificationConfigured,
       telegramNotificationDelivered,
     }),

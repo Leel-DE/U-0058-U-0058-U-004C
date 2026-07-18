@@ -25,7 +25,7 @@ export const discoveryStartSchema = z.object({
   respectRobotsTxt: z.boolean().default(true),
   jsRequired: z.boolean().default(false),
   useAi: z.boolean().default(false),
-  useManualCaptcha: z.boolean().default(true),
+  useManualCaptcha: z.boolean().default(false),
   includePatterns: patternList.default([]),
   excludePatterns: patternList.default([]),
   domainAllowlist: patternList.default([]),

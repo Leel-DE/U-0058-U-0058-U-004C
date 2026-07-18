@@ -138,7 +138,7 @@ export function DiscoveryStartForm({
   const [respectRobotsTxt, setRespectRobotsTxt] = useState(defaults.respectRobotsTxt ?? true);
   const [jsRequired, setJsRequired] = useState(defaults.jsRequired ?? false);
   const [useAi, setUseAi] = useState(defaults.useAi ?? false);
-  const [useManualCaptcha, setUseManualCaptcha] = useState(defaults.useManualCaptcha ?? true);
+  const [useManualCaptcha, setUseManualCaptcha] = useState(defaults.useManualCaptcha ?? false);
   const [includePatterns, setIncludePatterns] = useState(listToText(defaults.includePatterns));
   const [excludePatterns, setExcludePatterns] = useState(listToText(defaults.excludePatterns, DEFAULT_EXCLUDES));
   const [domainAllowlist, setDomainAllowlist] = useState(listToText(defaults.domainAllowlist));

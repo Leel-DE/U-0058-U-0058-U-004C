@@ -65,6 +65,7 @@ import { analyzeStore } from './discovery/store-analyzer.js';
 import { runProductSelectorRepair } from './repair/selector-repair-runner.js';
 import { selectorRepairRequestSchema } from './repair/selector-repair-types.js';
 import { automationRuntimeSupervisor } from './automation/runtime-supervisor.js';
+import { shipmentTrackingMonitor } from './shipments/monitor.js';
 
 const logger = pino({ name: 'cr-worker', level: process.env.LOG_LEVEL ?? 'info' });
 const PORT = Number(process.env.PORT ?? 4000);
@@ -162,7 +163,7 @@ const discoveryStartReqSchema = z.object({
   respectRobotsTxt: z.boolean().default(true),
   jsRequired: z.boolean().default(false),
   useAi: z.boolean().default(false),
-  useManualCaptcha: z.boolean().default(true),
+  useManualCaptcha: z.boolean().default(false),
   includePatterns: z.array(z.string()).default([]),
   excludePatterns: z.array(z.string()).default([]),
   domainAllowlist: z.array(z.string()).default([]),
@@ -1401,6 +1402,7 @@ const shutdown = async () => {
   logger.info('shutting down');
   try {
     stopSessionCleanup();
+    await shipmentTrackingMonitor.stop();
     await automationRuntimeSupervisor.stop();
     await app.close();
   } finally {
@@ -1422,6 +1424,10 @@ app
     }
     startSessionCleanup();
     await automationRuntimeSupervisor.start();
+    // Canonical TorqueCore shipment tracking: watches the durable
+    // shipment_tracking_runs queue and sends a Telegram update on every check.
+    // Self-gated — stays disabled until TORQUECORE_SUPABASE_* is configured.
+    await shipmentTrackingMonitor.start();
   })
   .catch((err) => {
     logger.error(err);

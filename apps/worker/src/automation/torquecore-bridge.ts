@@ -372,7 +372,7 @@ export class TorqueCoreShipmentBridge {
       respectRobotsTxt: Boolean(data.respect_robots_txt),
       forceJavaScript: data.force_javascript !== false,
       useAi: data.use_ai !== false,
-      useManualCaptcha: data.use_manual_captcha !== false,
+      useManualCaptcha: data.use_manual_captcha === true,
     };
   }
 
