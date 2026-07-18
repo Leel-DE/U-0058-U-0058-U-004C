@@ -1,14 +1,8 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-import {
-  chromium,
-  type Browser,
-  type BrowserContextOptions,
-  type Frame,
-  type Locator,
-  type Page,
-} from 'playwright';
+import { chromium, type Browser, type Frame, type Locator, type Page } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 
@@ -25,6 +19,12 @@ import {
   type ShipmentTrackingStatusHint,
 } from './tracking-core.js';
 import { buildCloudTrackingTelegramMessage, sendCloudTrackingTelegramMessage } from './telegram.js';
+import {
+  applySessionStorageInit,
+  loadBrowserStorageSnapshot,
+  storageStateForContext,
+  type LoadedBrowserStorage,
+} from './browser-storage.js';
 
 const argsSchema = z.union([
   z.object({
@@ -201,59 +201,6 @@ function readBrowserEnvironmentInput() {
     TORQUECORE_BROWSER_STORAGE_STATE_PATH:
       process.env.TORQUECORE_BROWSER_STORAGE_STATE_PATH || undefined,
   };
-}
-
-const browserStorageSnapshotSchema = z.object({
-  storageState: z
-    .object({
-      cookies: z.array(z.any()).default([]),
-      origins: z.array(z.any()).default([]),
-    })
-    .default({ cookies: [], origins: [] }),
-  sessionStorage: z
-    .array(
-      z.object({
-        origin: z.string(),
-        items: z.array(z.object({ name: z.string(), value: z.string() })).default([]),
-      }),
-    )
-    .default([]),
-});
-
-type LoadedBrowserStorage = {
-  storageState: { cookies: unknown[]; origins: unknown[] };
-  sessionStorage: Array<{ origin: string; items: Array<{ name: string; value: string }> }>;
-};
-
-/**
- * Load an operator-captured browser-storage snapshot from disk. Cookies and
- * localStorage ride along in Playwright's native `storageState` shape;
- * sessionStorage is captured separately and hydrated per origin via an init
- * script (Playwright's storageState format does not carry sessionStorage).
- * Missing or malformed files degrade gracefully to "no snapshot".
- */
-async function loadBrowserStorageSnapshot(
-  path: string | undefined,
-): Promise<LoadedBrowserStorage | null> {
-  if (!path) return null;
-  try {
-    const parsed = browserStorageSnapshotSchema.parse(JSON.parse(await readFile(path, 'utf8')));
-    const hasCookies = parsed.storageState.cookies.length > 0;
-    const hasLocalStorage = parsed.storageState.origins.length > 0;
-    const hasSessionStorage = parsed.sessionStorage.length > 0;
-    if (!hasCookies && !hasLocalStorage && !hasSessionStorage) return null;
-    return { storageState: parsed.storageState, sessionStorage: parsed.sessionStorage };
-  } catch (error) {
-    console.warn(
-      JSON.stringify({
-        job: 'shipment_tracking_browser_storage',
-        event: 'snapshot_load_failed',
-        path,
-        error: error instanceof Error ? error.message.slice(0, 300) : 'unknown',
-      }),
-    );
-    return null;
-  }
 }
 
 function readEnvironment() {
@@ -701,39 +648,18 @@ async function inspectSource(
     };
   }
 
-  const hasStorageState = Boolean(
-    browserStorage &&
-      (browserStorage.storageState.cookies.length > 0 ||
-        browserStorage.storageState.origins.length > 0),
-  );
+  const storageState = storageStateForContext(browserStorage ?? null);
   const context = await browser.newContext({
     locale: 'en-US',
     timezoneId: 'America/New_York',
     viewport: { width: 1366, height: 768 },
     extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
     // Hydrate the operator's captured cookies + localStorage natively.
-    ...(hasStorageState
-      ? {
-          storageState: browserStorage!.storageState as BrowserContextOptions['storageState'],
-        }
-      : {}),
+    ...(storageState ? { storageState } : {}),
   });
-  // sessionStorage is not part of Playwright's storageState, so replay it per
-  // origin with an init script that runs before the page's own scripts.
-  if (browserStorage?.sessionStorage.length) {
-    await context.addInitScript((origins: LoadedBrowserStorage['sessionStorage']) => {
-      try {
-        const match = origins.find((entry) => entry.origin === window.location.origin);
-        if (!match) return;
-        for (const item of match.items) {
-          window.sessionStorage.setItem(item.name, item.value);
-        }
-      } catch {
-        // Best-effort hydration only.
-      }
-    }, browserStorage.sessionStorage);
-  }
-  if (attemptLabel && (hasStorageState || browserStorage?.sessionStorage.length)) {
+  // sessionStorage is not part of Playwright's storageState — replay it per origin.
+  await applySessionStorageInit(context, browserStorage ?? null);
+  if (attemptLabel && (storageState || browserStorage?.sessionStorage.length)) {
     noteDebug(
       `${source.id}: hydrated operator browser storage ` +
         `(cookies=${browserStorage?.storageState.cookies.length ?? 0}, ` +
@@ -1347,4 +1273,30 @@ export async function runShipmentTracking(args: {
     presentationGenerated: Boolean(presentation),
     telegramDelivered: telegramNotificationDelivered,
   };
+}
+
+/**
+ * CLI entry point. Two modes (see `argsSchema`):
+ *   --tracking-number <n> --diagnostics-dir <dir>   → live diagnostics, no DB/Telegram
+ *   --shipment-id <id> --run-id <id>                → full canonical run
+ * Only runs when this file is executed directly, so importing it from the
+ * monitor never triggers a CLI run.
+ */
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.mode === 'diagnostics') {
+    await runDiagnostics({
+      trackingNumber: args.trackingNumber,
+      diagnosticsDir: args.diagnosticsDir,
+    });
+  } else {
+    await runShipmentTracking({ shipmentId: args.shipmentId, runId: args.runId });
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }

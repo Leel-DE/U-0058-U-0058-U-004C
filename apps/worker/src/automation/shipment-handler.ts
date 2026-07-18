@@ -151,6 +151,23 @@ async function readManualProvider(
   };
 }
 
+/**
+ * Choose which tracking providers a shipment job should check. A provider is
+ * included when it is configured (either explicitly requested or part of the
+ * default set) AND not currently disabled by the provider-health circuit
+ * breaker. Extracted as a pure function so the "check every healthy aggregator"
+ * contract is unit-tested and cannot silently regress to a single source.
+ */
+export function selectShipmentAdapters(
+  adapters: TrackingProviderAdapter[],
+  configured: Set<string>,
+  disabled: Set<string>,
+): TrackingProviderAdapter[] {
+  return adapters.filter(
+    (adapter) => configured.has(adapter.id) && !disabled.has(adapter.id),
+  );
+}
+
 export function createShipmentTrackingHandler(): BrowserJobHandler {
   const preparation = new PagePreparationService();
   const ai = new OpenAIProcessingService();
@@ -166,9 +183,7 @@ export function createShipmentTrackingHandler(): BrowserJobHandler {
       .eq('org_id', job.orgId)
       .gt('disabled_until', new Date().toISOString());
     const disabled = new Set((disabledRows ?? []).map((row) => String(row.provider)));
-    const adapters = shipmentAdapters.filter(
-      (adapter) => configured.has(adapter.id) && !disabled.has(adapter.id),
-    );
+    const adapters = selectShipmentAdapters(shipmentAdapters, configured, disabled);
     const results: Array<
       Record<string, unknown> & {
         provider: string;

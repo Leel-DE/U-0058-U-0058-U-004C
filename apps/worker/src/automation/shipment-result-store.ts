@@ -12,6 +12,71 @@ function providerStatus(state: string) {
   return 'failed';
 }
 
+export const PROVIDER_AUTO_DISABLE_THRESHOLD = 5;
+export const PROVIDER_AUTO_DISABLE_MS = 30 * 60_000;
+
+export interface ProviderHealthResult {
+  successRate: number;
+  captchaRate: number;
+  avgDurationMs: number | null;
+  consecutiveFailures: number;
+  state: 'healthy' | 'degraded' | 'unhealthy';
+  /** Milliseconds to disable the provider, or null when it stays enabled. */
+  disabledForMs: number | null;
+}
+
+/**
+ * Roll a provider's health forward from its previous row and the latest check.
+ * Pure and unit-tested so the auto-disable breaker cannot silently regress.
+ *
+ * CAPTCHA is treated as "needs a human / cookies", NOT as a provider outage: it
+ * must never accumulate toward auto-disable, otherwise a captcha-gated
+ * aggregator is hidden for 30 minutes and stops contributing. Only hard
+ * failures (timeout / blocked / error) grow the streak; a success clears it.
+ */
+export function computeProviderHealth(input: {
+  current: {
+    success_rate?: unknown;
+    captcha_rate?: unknown;
+    avg_duration_ms?: unknown;
+    consecutive_failures?: unknown;
+  } | null;
+  state: string;
+  durationMs: number;
+}): ProviderHealthResult {
+  const { current } = input;
+  const succeeded = input.state === 'success';
+  const captcha = input.state === 'captcha';
+
+  const successRate = current
+    ? Number(current.success_rate) * 0.8 + (succeeded ? 0.2 : 0)
+    : succeeded
+      ? 1
+      : 0;
+  const captchaRate = current
+    ? Number(current.captcha_rate) * 0.8 + (captcha ? 0.2 : 0)
+    : captcha
+      ? 1
+      : 0;
+  const duration = Number(input.durationMs ?? 0);
+  const avgDurationMs = current?.avg_duration_ms
+    ? Math.round(Number(current.avg_duration_ms) * 0.8 + duration * 0.2)
+    : duration || null;
+
+  const previousFailures = Number(current?.consecutive_failures ?? 0);
+  const consecutiveFailures = succeeded
+    ? 0
+    : captcha
+      ? previousFailures // CAPTCHA is neutral for the breaker.
+      : previousFailures + 1;
+
+  const state = successRate >= 0.7 ? 'healthy' : successRate >= 0.3 ? 'degraded' : 'unhealthy';
+  const disabledForMs =
+    consecutiveFailures >= PROVIDER_AUTO_DISABLE_THRESHOLD ? PROVIDER_AUTO_DISABLE_MS : null;
+
+  return { successRate, captchaRate, avgDurationMs, consecutiveFailures, state, disabledForMs };
+}
+
 export class ShipmentResultStore {
   private readonly notifications: NotificationService;
   constructor(private readonly client: SupabaseClient) {
@@ -114,42 +179,31 @@ export class ShipmentResultStore {
     if (provider.state === 'robots_disallowed') return;
     const providerId = String(provider.provider);
     const succeeded = provider.state === 'success';
-    const captcha = provider.state === 'captcha';
     const { data: current } = await this.client
       .from('provider_health')
       .select('success_rate, captcha_rate, avg_duration_ms, consecutive_failures')
       .eq('org_id', orgId)
       .eq('provider', providerId)
       .maybeSingle();
-    const successRate = current
-      ? Number(current.success_rate) * 0.8 + (succeeded ? 0.2 : 0)
-      : succeeded
-        ? 1
-        : 0;
-    const captchaRate = current
-      ? Number(current.captcha_rate) * 0.8 + (captcha ? 0.2 : 0)
-      : captcha
-        ? 1
-        : 0;
-    const duration = Number(provider.durationMs ?? 0);
-    const avgDuration = current?.avg_duration_ms
-      ? Math.round(Number(current.avg_duration_ms) * 0.8 + duration * 0.2)
-      : duration || null;
-    const consecutiveFailures = succeeded ? 0 : Number(current?.consecutive_failures ?? 0) + 1;
-    const state = successRate >= 0.7 ? 'healthy' : successRate >= 0.3 ? 'degraded' : 'unhealthy';
+    const health = computeProviderHealth({
+      current: current ?? null,
+      state: String(provider.state),
+      durationMs: Number(provider.durationMs ?? 0),
+    });
     const { error } = await this.client.from('provider_health').upsert(
       {
         org_id: orgId,
         provider: providerId,
-        state,
-        success_rate: successRate,
-        captcha_rate: captchaRate,
-        avg_duration_ms: avgDuration,
-        consecutive_failures: consecutiveFailures,
+        state: health.state,
+        success_rate: health.successRate,
+        captcha_rate: health.captchaRate,
+        avg_duration_ms: health.avgDurationMs,
+        consecutive_failures: health.consecutiveFailures,
         last_success_at: succeeded ? new Date().toISOString() : current ? undefined : null,
         last_failure_at: succeeded ? undefined : new Date().toISOString(),
-        disabled_until:
-          consecutiveFailures >= 5 ? new Date(Date.now() + 30 * 60_000).toISOString() : null,
+        disabled_until: health.disabledForMs
+          ? new Date(Date.now() + health.disabledForMs).toISOString()
+          : null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'org_id,provider' },
