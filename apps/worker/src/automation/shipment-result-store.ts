@@ -174,6 +174,12 @@ export class ShipmentResultStore {
       title: String(result.title ?? 'Статус посылки'),
       description: String(result.description ?? ''),
       carrier: result.carrier ? String(result.carrier) : null,
+      location: result.location ? String(result.location) : null,
+      origin: result.origin ? String(result.origin) : null,
+      destination: result.destination ? String(result.destination) : null,
+      nextStep: result.nextStep ? String(result.nextStep) : null,
+      eventAt: result.eventAt ? String(result.eventAt) : null,
+      checkedAt: result.checkedAt ? String(result.checkedAt) : null,
     });
   }
 

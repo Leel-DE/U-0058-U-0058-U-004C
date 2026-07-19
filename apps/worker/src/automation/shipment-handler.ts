@@ -316,7 +316,15 @@ export function createShipmentTrackingHandler(): BrowserJobHandler {
     const consensusStatus =
       useful.map((result) => result.status).sort((a, b) => rank[b] - rank[a])[0] ?? 'unknown';
     const confidence = useful.length === 0 ? 0 : Math.min(0.98, 0.55 + useful.length * 0.12);
-    const fallbackPresentation = friendly(consensusStatus);
+    const fallbackPresentation = {
+      ...friendly(consensusStatus),
+      nextStep: null,
+      carrier: null,
+      location: null,
+      origin: null,
+      destination: null,
+      eventAt: null,
+    };
     const presentation =
       useful.length > 0 && payload.useAi
         ? await ai
@@ -326,8 +334,8 @@ export function createShipmentTrackingHandler(): BrowserJobHandler {
               description: fallbackPresentation.description,
               facts: useful.map((item) => String(item.excerpt ?? '').slice(0, 500)).filter(Boolean),
             })
-            .catch(() => ({ ...fallbackPresentation, nextStep: null }))
-        : { ...fallbackPresentation, nextStep: null };
+            .catch(() => fallbackPresentation)
+        : fallbackPresentation;
     const publicProviders = results.map(({ excerpt, ...provider }) => ({
       ...provider,
       evidenceSummary: evidenceSummary(excerpt),
@@ -338,7 +346,11 @@ export function createShipmentTrackingHandler(): BrowserJobHandler {
       trackingNumber: payload.trackingNumber,
       status: consensusStatus,
       ...presentation,
-      carrier: useful.find((result) => result.provider === 'ups') ? 'UPS' : null,
+      // A confirmed UPS source is authoritative for the carrier; otherwise fall
+      // back to whatever the AI extracted from the evidence (e.g. YANWEN).
+      carrier: useful.find((result) => result.provider === 'ups')
+        ? 'UPS'
+        : (presentation.carrier ?? null),
       confidence,
       checkedAt: new Date().toISOString(),
       providers: publicProviders,
