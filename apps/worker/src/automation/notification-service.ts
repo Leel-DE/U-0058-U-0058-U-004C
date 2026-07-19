@@ -1,15 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-const IMPORTANT = new Set([
-  'info_received',
-  'in_transit',
-  'customs',
-  'out_for_delivery',
-  'delivered',
-  'exception',
-  'returned',
-]);
-
 function escapeHtml(value: string) {
   return value.replace(
     /[&<>]/g,
@@ -99,9 +89,15 @@ export class NotificationService {
     eventAt?: string | null;
     checkedAt?: string | null;
   }) {
-    if (input.previousStatus === input.status || !IMPORTANT.has(input.status))
-      return { sent: false, reason: 'not_important' };
-    const dedupeKey = `telegram:${input.shipmentId}:${input.status}`;
+    // The caller only reaches this method when a check produced confirmed data
+    // (persist() bails out earlier when preserveLastConfirmed is set), so send a
+    // report on every such check — even when the status did not change. Keying
+    // the delivery on the check timestamp (not the status) makes each check a
+    // distinct row, so unchanged-status re-checks are no longer deduped away
+    // while an accidental double-process of the same check still collapses.
+    if (input.status === 'pending') return { sent: false, reason: 'not_important' };
+    const checkToken = input.checkedAt ?? new Date().toISOString();
+    const dedupeKey = `telegram:${input.shipmentId}:${checkToken}`;
     const { data, error } = await this.client
       .from('notification_deliveries')
       .insert({
