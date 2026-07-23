@@ -10,15 +10,21 @@ import { CredentialVault } from './credential-vault.mjs';
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(desktopRoot, '../..');
 const hiddenStart = process.argv.includes('--hidden');
+const APP_URL = 'http://127.0.0.1:3000/automation';
+const WEB_READY_URL = 'http://127.0.0.1:3000/login';
+// Web runs as a production build (`next start`) so navigation is instant —
+// `next dev` recompiles every route on demand, which made each click lag.
 const services = [
-  { name: 'web', port: 3000, script: 'dev:web' },
+  { name: 'web', port: 3000, script: 'start:web' },
   { name: 'worker', port: 4000, script: 'dev:worker' },
   { name: 'inngest', port: 8288, script: 'dev:inngest' },
 ];
+const webBuildIdPath = join(repoRoot, 'apps', 'web', '.next', 'BUILD_ID');
 const children = new Map();
 let mainWindow = null;
 let tray = null;
 let shuttingDown = false;
+let webBuildInProgress = false;
 let serviceTimer = null;
 let eventTimer = null;
 let eventCursor = null;
@@ -70,6 +76,27 @@ async function waitForPort(port, timeoutMs) {
   while (Date.now() < deadline) {
     if (await isPortOpen(port)) return true;
     await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+  }
+  return false;
+}
+
+// A listening port only means Next has bound the socket; the first render can
+// still fail while it compiles or while the database is not yet reachable.
+// Wait until the server actually answers with a non-5xx response before we
+// point the window at it, so we never freeze on a blank initial paint.
+async function waitForHttpReady(url, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(2_000),
+      });
+      if (response.status < 500) return true;
+    } catch {
+      // Server not answering yet; keep polling.
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 1_000));
   }
   return false;
 }
@@ -147,12 +174,41 @@ async function runSupabaseStart() {
   stream.end();
 }
 
+// `next start` needs a production build to exist. Build once if missing (or
+// when forced after code changes); return false while a build is running so
+// the web service is not started against a half-written .next directory.
+async function ensureWebBuild(force = false) {
+  if (!force && existsSync(webBuildIdPath)) return true;
+  if (webBuildInProgress) return false;
+  webBuildInProgress = true;
+  updateTrayMenu('Building web…');
+  const stream = logStream('web-build');
+  stream.write(`\n[${new Date().toISOString()}] Building web (production)\n`);
+  const built = await new Promise((resolveBuild) => {
+    const pnpm = pnpmCommand(['build:web']);
+    const child = spawn(pnpm.command, pnpm.args, {
+      cwd: repoRoot,
+      env: process.env,
+      windowsHide: true,
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stdout.pipe(stream, { end: false });
+    child.stderr.pipe(stream, { end: false });
+    child.once('exit', (code) => resolveBuild(code === 0));
+  });
+  stream.end();
+  webBuildInProgress = false;
+  return built && existsSync(webBuildIdPath);
+}
+
 async function ensureServices() {
   if (shuttingDown) return;
   await runSupabaseStart();
   for (const service of services) {
-    const open = await isPortOpen(service.port);
-    if (!open) startService(service);
+    if (await isPortOpen(service.port)) continue;
+    if (service.name === 'web' && !(await ensureWebBuild())) continue;
+    startService(service);
   }
 }
 
@@ -177,6 +233,39 @@ function showMainWindow() {
   mainWindow.focus();
 }
 
+async function loadAutomation() {
+  if (!mainWindow || shuttingDown) return;
+  try {
+    await mainWindow.loadURL(APP_URL);
+  } catch {
+    // A rejected navigation is retried by the did-fail-load handler.
+  }
+}
+
+function stopService(name) {
+  const entry = children.get(name);
+  if (!entry) return;
+  if (entry.child.pid && process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(entry.child.pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+  } else {
+    entry.child.kill('SIGTERM');
+  }
+  entry.stream.end();
+  children.delete(name);
+}
+
+async function rebuildWeb() {
+  if (webBuildInProgress) return;
+  stopService('web');
+  const ok = await ensureWebBuild(true);
+  updateTrayMenu(ok ? 'Starting' : 'build failed');
+  await ensureServices();
+  if (ok && (await waitForHttpReady(WEB_READY_URL, 90_000))) await loadAutomation();
+}
+
 function updateTrayMenu(state = 'Starting') {
   if (!tray) return;
   tray.setToolTip(`Automation Hub — ${state}`);
@@ -185,6 +274,13 @@ function updateTrayMenu(state = 'Starting') {
       { label: `Automation: ${state}`, enabled: false },
       { type: 'separator' },
       { label: 'Open Automation Hub', click: showMainWindow },
+      {
+        label: 'Reload Window',
+        click: () => {
+          showMainWindow();
+          void loadAutomation();
+        },
+      },
       {
         label: 'Open Logs',
         click: () => void shell.openPath(logDirectory()),
@@ -195,6 +291,11 @@ function updateTrayMenu(state = 'Starting') {
           stopOwnedProcesses();
           setTimeout(() => void ensureServices(), 500).unref();
         },
+      },
+      {
+        label: 'Rebuild Web (apply code changes)',
+        enabled: !webBuildInProgress,
+        click: () => void rebuildWeb(),
       },
       { type: 'separator' },
       {
@@ -289,6 +390,11 @@ function createWindow() {
     const target = new URL(url);
     if (target.origin !== 'http://127.0.0.1:3000') event.preventDefault();
   });
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, _desc, _url, isMainFrame) => {
+    // Ignore sub-frames and aborted loads (ERR_ABORTED, fired by redirects).
+    if (!isMainFrame || errorCode === -3 || shuttingDown) return;
+    setTimeout(() => void loadAutomation(), 2_000).unref();
+  });
 }
 
 async function boot() {
@@ -301,8 +407,8 @@ async function boot() {
 
   await ensureServices();
   const webReady = await waitForPort(3000, 120_000);
-  if (webReady) {
-    await mainWindow.loadURL('http://127.0.0.1:3000/automation');
+  if (webReady && (await waitForHttpReady(WEB_READY_URL, 90_000))) {
+    await loadAutomation();
   } else {
     await mainWindow.loadURL(
       "data:text/html;charset=utf-8,<main style='font:16px system-ui;padding:32px'><h1>Automation Hub could not start</h1><p>Open the tray menu and check the logs.</p></main>",
