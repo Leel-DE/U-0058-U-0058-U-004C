@@ -68,7 +68,13 @@
       "Bash(npx vitest *)",
       "Bash(cd /d/Apps/XXL && find . -name \"*.ts\" -newer \"/d/Apps/XXL/apps/web/src/lib/utils.ts\" -not -path \"*/node_modules/*\" 2>/dev/null | head -10; echo \"---\"; pwd)",
       "Bash(ls \"C:/Users/Артур/.claude/projects/D--Apps-XXL/memory\" 2>&1 | head -5)",
-      "Bash(powershell -Command \"Get-ChildItem -Force 'C:\\\\Users\\\\Артур\\\\.claude\\\\projects\\\\D--Apps-XXL\\\\memory' -ErrorAction SilentlyContinue | Format-Table Name\")"
+      "Bash(powershell -Command \"Get-ChildItem -Force 'C:\\\\Users\\\\Артур\\\\.claude\\\\projects\\\\D--Apps-XXL\\\\memory' -ErrorAction SilentlyContinue | Format-Table Name\")",
+      "Bash(grep -iE '\\\\.tmp|\\\\.log$|codex-logs')",
+      "Bash(xargs wc -l)",
+      "Bash(node -e \"try{require.resolve\\('playwright'\\);console.log\\('playwright OK at root'\\)}catch\\(e\\){console.log\\('NO playwright at root:',e.message.split\\('\\\\n'\\)[0]\\)}\")",
+      "Bash(node -e \"try{console.log\\('worker playwright:',require.resolve\\('playwright'\\)\\)}catch\\(e\\){console.log\\('NO:',e.message.split\\('\\\\n'\\)[0]\\)}\")",
+      "Bash(git check-ignore *)",
+      "Bash(pnpm --filter @cr/worker --filter @cr/shared --filter @cr/db typecheck)"
     ]
   }
 }

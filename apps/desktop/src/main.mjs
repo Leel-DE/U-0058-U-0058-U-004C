@@ -25,6 +25,9 @@ let mainWindow = null;
 let tray = null;
 let shuttingDown = false;
 let webBuildInProgress = false;
+let supabaseStarting = false;
+let supabaseRetryAt = 0;
+let supabaseFailures = 0;
 let serviceTimer = null;
 let eventTimer = null;
 let eventCursor = null;
@@ -147,11 +150,20 @@ function startService(service) {
   });
 }
 
+// `supabase start` can legitimately take minutes (Docker Desktop may still be
+// booting), and a broken stack fails every single time. Without a guard the
+// 10 s service tick piles up overlapping starts and rewrites the same failure
+// into the log forever, so serialise the runs and back off after failures.
 async function runSupabaseStart() {
-  if (await isPortOpen(54321)) return;
+  if (await isPortOpen(54321)) {
+    supabaseFailures = 0;
+    return true;
+  }
+  if (supabaseStarting || Date.now() < supabaseRetryAt) return false;
+  supabaseStarting = true;
   const stream = logStream('supabase');
   stream.write(`\n[${new Date().toISOString()}] Starting local Supabase\n`);
-  await new Promise((resolveRun) => {
+  const code = await new Promise((resolveRun) => {
     const pnpm = pnpmCommand(['supabase:start']);
     const child = spawn(pnpm.command, pnpm.args, {
       cwd: repoRoot,
@@ -164,14 +176,31 @@ async function runSupabaseStart() {
     child.stderr.pipe(stream, { end: false });
     const timeout = setTimeout(() => {
       stream.write('Supabase start timed out.\n');
-      resolveRun();
-    }, 120_000);
-    child.once('exit', () => {
+      if (child.pid && process.platform === 'win32') {
+        spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+          windowsHide: true,
+          stdio: 'ignore',
+        });
+      } else {
+        child.kill('SIGTERM');
+      }
+      resolveRun(null);
+    }, 600_000);
+    child.once('exit', (exitCode) => {
       clearTimeout(timeout);
-      resolveRun();
+      resolveRun(exitCode);
     });
   });
   stream.end();
+  supabaseStarting = false;
+  if (code === 0) {
+    supabaseFailures = 0;
+    return true;
+  }
+  supabaseFailures += 1;
+  supabaseRetryAt = Date.now() + Math.min(30_000 * 2 ** (supabaseFailures - 1), 600_000);
+  updateTrayMenu('Supabase unavailable — open the logs');
+  return false;
 }
 
 // `next start` needs a production build to exist. Build once if missing (or
@@ -289,6 +318,10 @@ function updateTrayMenu(state = 'Starting') {
         label: 'Restart Services',
         click: () => {
           stopOwnedProcesses();
+          // An explicit restart is the user asking for a retry now, so drop
+          // any pending Supabase back-off.
+          supabaseRetryAt = 0;
+          supabaseFailures = 0;
           setTimeout(() => void ensureServices(), 500).unref();
         },
       },

@@ -218,6 +218,40 @@ Local-first changes:
 
 ## Troubleshooting
 
+### Ports reserved by Windows (containers exit right after a reboot)
+
+Symptom — the Supabase containers are `Exited`, `docker start` fails with
+`bind: An attempt was made to access a socket in a way forbidden by its access permissions`,
+and `supabase start` loops on:
+
+```txt
+supabase start is already running.
+supabase_db_competitor-radar-local container is not running: exited
+```
+
+Cause — Windows hands ports `49152-65535` to the ephemeral pool, and
+WinNAT/Hyper-V reserves random 100-port blocks out of it on every boot. When one
+of those blocks covers `54321-54324`, Docker cannot publish the Supabase ports.
+Check with:
+
+```powershell
+netsh int ipv4 show excludedportrange protocol=tcp
+```
+
+Fix — reserve the range once, persistently, from an **elevated** PowerShell:
+
+```powershell
+pwsh -File scripts/fix-windows-supabase-ports.ps1
+```
+
+The script stops WinNAT, adds an administered `store=persistent` exclusion for
+`54320-54340`, restarts WinNAT, and verifies the ports can be bound. An
+administered exclusion keeps WinNAT away from the range across reboots while
+Docker can still bind it explicitly.
+
+`pnpm supabase:start` detects this condition before touching the stack and
+prints the same instructions instead of failing in a loop.
+
 ### PowerShell blocks pnpm.ps1
 
 Use `pnpm.cmd` directly:
