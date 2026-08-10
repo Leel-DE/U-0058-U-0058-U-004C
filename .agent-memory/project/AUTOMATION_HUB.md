@@ -33,6 +33,7 @@
 15. The SQL claim function enforces per-organization concurrency; `AUTOMATION_CONCURRENCY` is only the process-wide safety ceiling.
 16. Shipment browser policy is stored per shipment (`respect_robots_txt`, `force_javascript`, `use_ai`, `use_manual_captcha`) and copied into every manual, scheduled, bulk, and TorqueCore-bridged job payload.
 17. Raw SQL must remain portable to bare PostgreSQL in CI. `0001_extensions_and_triggers.sql` supplies no-login shims for the Supabase roles `anon`, `authenticated`, and `service_role` only when those roles do not already exist.
+18. Manual shipment completion and deletion cancel active shipment jobs first. Marking delivered sets `tracking_enabled = false` and clears `next_check_at`; shipment result persistence must condition its final update on `tracking_enabled = true` so a stale browser result cannot undo an operator stop.
 
 ## Operations controls
 
@@ -42,6 +43,7 @@
 - `/automation` owns the selected organization's running/paused state, shared competitor interval, and parallel browser worker limit. Switching organizations does not alter the previous organization's policy.
 - Worker events and active-job details must always be filtered by organization before returning them to the web client.
 - Shipment and job detail pages expose both manual-session actions while a job is `awaiting_user`: focus/open the existing CAPTCHA browser, then resume after the user solves it.
+- Shipment list and detail pages expose manual delivery to owners/managers and permanent shipment deletion to owners. Deletion removes shipment-linked automation job history as well as shipment-owned rows.
 
 ## Narrow validation
 

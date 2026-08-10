@@ -1,13 +1,14 @@
 'use server';
 
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { defineAction } from '@/lib/action';
 import { db, schema } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { serverEnv } from '@/lib/env';
+import { cancelJobsForPayloadReference } from '@/server/automation/control';
 
 const trackingNumberSchema = z
   .string()
@@ -46,9 +47,7 @@ const manualSessionRefSchema = z.object({
 
 function manualSessionFromResult(value: unknown) {
   if (!value || typeof value !== 'object') return null;
-  const parsed = manualSessionRefSchema.safeParse(
-    (value as Record<string, unknown>).manualSession,
-  );
+  const parsed = manualSessionRefSchema.safeParse((value as Record<string, unknown>).manualSession);
   return parsed.success ? parsed.data : null;
 }
 
@@ -63,7 +62,8 @@ async function focusWorkerSession(sessionId: string) {
     body: JSON.stringify({ sessionId }),
     signal: AbortSignal.timeout(30_000),
   });
-  if (!response.ok) throw new Error('Manual CAPTCHA window is no longer available. Run the check again.');
+  if (!response.ok)
+    throw new Error('Manual CAPTCHA window is no longer available. Run the check again.');
 }
 
 function queueValues(input: {
@@ -174,34 +174,30 @@ export const bulkCreateShipments = defineAction(
       }
       const id = randomUUID();
       await db().transaction(async (tx) => {
-        await tx
-          .insert(schema.shipments)
-          .values({
-            id,
+        await tx.insert(schema.shipments).values({
+          id,
+          orgId: ctx.orgId,
+          trackingNumber,
+          respectRobotsTxt: false,
+          forceJavaScript: true,
+          useAi: true,
+          useManualCaptcha: false,
+          createdBy: ctx.user.id,
+        });
+        await tx.insert(schema.automationJobs).values(
+          queueValues({
             orgId: ctx.orgId,
+            shipmentId: id,
             trackingNumber,
-            respectRobotsTxt: false,
-            forceJavaScript: true,
-            useAi: true,
-            useManualCaptcha: false,
-            createdBy: ctx.user.id,
-          });
-        await tx
-          .insert(schema.automationJobs)
-          .values(
-            queueValues({
-              orgId: ctx.orgId,
-              shipmentId: id,
-              trackingNumber,
-              userId: ctx.user.id,
-              settings: {
-                respectRobotsTxt: false,
-                forceJavaScript: true,
-                useAi: true,
-                useManualCaptcha: false,
-              },
-            }),
-          );
+            userId: ctx.user.id,
+            settings: {
+              respectRobotsTxt: false,
+              forceJavaScript: true,
+              useAi: true,
+              useManualCaptcha: false,
+            },
+          }),
+        );
       });
       created += 1;
     }
@@ -225,6 +221,7 @@ export const enqueueShipmentCheck = defineAction(
       .select({
         id: schema.shipments.id,
         trackingNumber: schema.shipments.trackingNumber,
+        trackingEnabled: schema.shipments.trackingEnabled,
         respectRobotsTxt: schema.shipments.respectRobotsTxt,
         forceJavaScript: schema.shipments.forceJavaScript,
         useAi: schema.shipments.useAi,
@@ -234,6 +231,7 @@ export const enqueueShipmentCheck = defineAction(
       .where(and(eq(schema.shipments.id, input.shipmentId), eq(schema.shipments.orgId, ctx.orgId)))
       .limit(1);
     if (!shipment) throw new Error('Shipment not found');
+    if (!shipment.trackingEnabled) throw new Error('Shipment tracking is disabled');
     const existing = await db()
       .select({ id: schema.automationJobs.id })
       .from(schema.automationJobs)
@@ -274,6 +272,139 @@ export const enqueueShipmentCheck = defineAction(
   { roles: ['owner', 'manager'] },
 );
 
+export const markShipmentDelivered = defineAction(
+  z.object({ shipmentId: z.string().uuid() }),
+  async (input, ctx) => {
+    const [existing] = await db()
+      .select({
+        id: schema.shipments.id,
+        trackingNumber: schema.shipments.trackingNumber,
+        currentStatus: schema.shipments.currentStatus,
+        trackingEnabled: schema.shipments.trackingEnabled,
+        deliveredAt: schema.shipments.deliveredAt,
+      })
+      .from(schema.shipments)
+      .where(and(eq(schema.shipments.id, input.shipmentId), eq(schema.shipments.orgId, ctx.orgId)))
+      .limit(1);
+    if (!existing) throw new Error('Shipment not found');
+
+    const cancelledJobIds = await cancelJobsForPayloadReference({
+      orgId: ctx.orgId,
+      field: 'shipmentId',
+      value: existing.id,
+      reason: {
+        errorCode: 'tracking_stopped',
+        errorSummary: 'Shipment was marked delivered by an operator.',
+      },
+    });
+
+    const deliveredAt = existing.deliveredAt ?? new Date();
+    await db().transaction(async (tx) => {
+      await tx
+        .update(schema.shipments)
+        .set({
+          ...(existing.currentStatus !== 'delivered'
+            ? { previousStatus: existing.currentStatus }
+            : {}),
+          currentStatus: 'delivered',
+          statusTitle: 'Доставлено вручную',
+          statusDescription:
+            'Отмечено оператором как доставленное. Автоматическое отслеживание остановлено.',
+          trackingEnabled: false,
+          deliveredAt,
+          lastEventAt: deliveredAt,
+          nextCheckAt: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(schema.shipments.id, existing.id), eq(schema.shipments.orgId, ctx.orgId)));
+
+      if (existing.currentStatus !== 'delivered' || existing.trackingEnabled) {
+        await tx.insert(schema.shipmentEvents).values({
+          orgId: ctx.orgId,
+          shipmentId: existing.id,
+          status: 'delivered',
+          title: 'Доставлено вручную',
+          description: 'Оператор подтвердил доставку и остановил автоматическое отслеживание.',
+          eventAt: deliveredAt,
+          eventHash: `manual-delivered:${randomUUID()}`,
+        });
+      }
+    });
+
+    await logAudit({
+      orgId: ctx.orgId,
+      userId: ctx.user.id,
+      action: 'shipment.mark_delivered',
+      entity: 'shipment',
+      entityId: existing.id,
+      before: {
+        status: existing.currentStatus,
+        trackingEnabled: existing.trackingEnabled,
+      },
+      after: {
+        status: 'delivered',
+        trackingEnabled: false,
+        cancelledJobIds,
+      },
+    });
+    revalidatePath('/shipments');
+    revalidatePath(`/shipments/${existing.id}`);
+    revalidatePath('/jobs');
+    return { id: existing.id, cancelledJobs: cancelledJobIds.length };
+  },
+  { roles: ['owner', 'manager'] },
+);
+
+export const deleteShipment = defineAction(
+  z.object({ shipmentId: z.string().uuid() }),
+  async (input, ctx) => {
+    const [existing] = await db()
+      .select({
+        id: schema.shipments.id,
+        trackingNumber: schema.shipments.trackingNumber,
+        displayName: schema.shipments.displayName,
+        currentStatus: schema.shipments.currentStatus,
+      })
+      .from(schema.shipments)
+      .where(and(eq(schema.shipments.id, input.shipmentId), eq(schema.shipments.orgId, ctx.orgId)))
+      .limit(1);
+    if (!existing) throw new Error('Shipment not found');
+
+    await cancelJobsForPayloadReference({
+      orgId: ctx.orgId,
+      field: 'shipmentId',
+      value: existing.id,
+    });
+
+    const shipmentReference = sql<string>`${schema.automationJobs.payloadJson} ->> 'shipmentId'`;
+    await db().transaction(async (tx) => {
+      await tx
+        .delete(schema.automationJobs)
+        .where(and(eq(schema.automationJobs.orgId, ctx.orgId), eq(shipmentReference, existing.id)));
+      await tx
+        .delete(schema.shipments)
+        .where(and(eq(schema.shipments.id, existing.id), eq(schema.shipments.orgId, ctx.orgId)));
+    });
+
+    await logAudit({
+      orgId: ctx.orgId,
+      userId: ctx.user.id,
+      action: 'shipment.delete',
+      entity: 'shipment',
+      entityId: existing.id,
+      before: {
+        trackingNumber: existing.trackingNumber,
+        displayName: existing.displayName,
+        status: existing.currentStatus,
+      },
+    });
+    revalidatePath('/shipments');
+    revalidatePath('/jobs');
+    return { id: existing.id };
+  },
+  { roles: ['owner'] },
+);
+
 export const updateShipmentTrackingSettings = defineAction(
   trackingSettingsSchema,
   async (input, ctx) => {
@@ -296,9 +427,7 @@ export const updateShipmentTrackingSettings = defineAction(
           : {}),
         updatedAt: new Date(),
       })
-      .where(
-        and(eq(schema.shipments.id, input.shipmentId), eq(schema.shipments.orgId, ctx.orgId)),
-      )
+      .where(and(eq(schema.shipments.id, input.shipmentId), eq(schema.shipments.orgId, ctx.orgId)))
       .returning({ id: schema.shipments.id });
     if (!shipment) throw new Error('Shipment not found');
     await logAudit({
