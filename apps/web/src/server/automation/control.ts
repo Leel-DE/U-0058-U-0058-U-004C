@@ -39,6 +39,10 @@ export async function cancelJobsForPayloadReferences(input: {
   orgId: string;
   field: 'storeId' | 'competitorProductId' | 'shipmentId';
   values: string[];
+  reason?: {
+    errorCode: string;
+    errorSummary: string;
+  };
 }) {
   if (input.values.length === 0) return [];
   const payloadReference = sql<string>`${schema.automationJobs.payloadJson} ->> ${input.field}`;
@@ -47,8 +51,8 @@ export async function cancelJobsForPayloadReferences(input: {
     .set({
       status: 'cancelled',
       finishedAt: new Date(),
-      errorCode: 'source_deleted',
-      errorSummary: 'The source entity was deleted by an operator.',
+      errorCode: input.reason?.errorCode ?? 'source_deleted',
+      errorSummary: input.reason?.errorSummary ?? 'The source entity was deleted by an operator.',
       leaseOwner: null,
       leaseToken: null,
       leasedUntil: null,
@@ -76,10 +80,15 @@ export async function cancelJobsForPayloadReference(input: {
   orgId: string;
   field: 'storeId' | 'competitorProductId' | 'shipmentId';
   value: string;
+  reason?: {
+    errorCode: string;
+    errorSummary: string;
+  };
 }) {
   return cancelJobsForPayloadReferences({
     orgId: input.orgId,
     field: input.field,
     values: [input.value],
+    reason: input.reason,
   });
 }

@@ -87,11 +87,14 @@ export class ShipmentResultStore {
     const shipmentId = String(result.shipmentId);
     const { data: shipment, error: readError } = await this.client
       .from('shipments')
-      .select('current_status, tracking_number, check_interval_override_minutes')
+      .select('current_status, tracking_number, tracking_enabled, check_interval_override_minutes')
       .eq('id', shipmentId)
       .eq('org_id', job.orgId)
       .single();
     if (readError) throw readError;
+    // An operator may mark or delete a shipment while a browser job is still
+    // winding down. Never let that stale result re-enable or rewrite tracking.
+    if (!shipment.tracking_enabled) return;
     const status = String(result.status ?? 'unknown');
     const schedule = nextShipmentCheck(
       status,
@@ -139,12 +142,16 @@ export class ShipmentResultStore {
       tracking_enabled: !['delivered', 'returned'].includes(status),
       updated_at: new Date().toISOString(),
     };
-    const { error: updateError } = await this.client
+    const { data: updatedShipment, error: updateError } = await this.client
       .from('shipments')
       .update(update)
       .eq('id', shipmentId)
-      .eq('org_id', job.orgId);
+      .eq('org_id', job.orgId)
+      .eq('tracking_enabled', true)
+      .select('id')
+      .maybeSingle();
     if (updateError) throw updateError;
+    if (!updatedShipment) return;
 
     const eventHash = createHash('sha256')
       .update(

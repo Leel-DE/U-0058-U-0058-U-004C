@@ -20,6 +20,7 @@ import { ShipmentStatusBadge } from '../_components/status-badge';
 import { CheckButton } from '../_components/check-button';
 import { ResumeButton } from '../_components/resume-button';
 import { TrackingSettingsForm } from '../_components/tracking-settings';
+import { ShipmentActions } from '../_components/shipment-actions';
 import { timeAgo } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -90,7 +91,19 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           </h1>
           <p className="text-muted-foreground mt-1 font-mono text-sm">{shipment.trackingNumber}</p>
         </div>
-        {canManage ? <CheckButton shipmentId={shipment.id} /> : null}
+        {canManage ? (
+          <div className="flex flex-col items-end gap-2">
+            {shipment.trackingEnabled ? <CheckButton shipmentId={shipment.id} /> : null}
+            <ShipmentActions
+              shipmentId={shipment.id}
+              trackingNumber={shipment.trackingNumber}
+              trackingEnabled={shipment.trackingEnabled}
+              isDelivered={shipment.currentStatus === 'delivered'}
+              canDelete={ctx.role === 'owner'}
+              redirectAfterDelete
+            />
+          </div>
+        ) : null}
       </header>
 
       {latestJob && ['queued', 'running', 'awaiting_user'].includes(latestJob.status) ? (

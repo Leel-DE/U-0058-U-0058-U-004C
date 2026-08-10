@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ShipmentStatusBadge } from './_components/status-badge';
+import { ShipmentActions } from './_components/shipment-actions';
 import { BulkShipmentForm } from './_components/bulk-form';
 import { timeAgo } from '@/lib/utils';
 
@@ -55,7 +56,7 @@ export default async function ShipmentsPage() {
             <Box className="text-primary h-5 w-5" />
             <div>
               <p className="text-2xl font-semibold">{shipments.length}</p>
-              <p className="text-muted-foreground text-xs">Всего отслеживается</p>
+              <p className="text-muted-foreground text-xs">Всего отправлений</p>
             </div>
           </CardContent>
         </Card>
@@ -97,7 +98,7 @@ export default async function ShipmentsPage() {
       ) : (
         <Card className="overflow-hidden">
           <CardContent className="overflow-x-auto p-0">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[920px] text-sm">
               <thead className="bg-muted/40 text-muted-foreground border-b text-left text-xs">
                 <tr>
                   <th className="px-4 py-3">Отправление</th>
@@ -105,6 +106,7 @@ export default async function ShipmentsPage() {
                   <th className="px-4 py-3">Перевозчик</th>
                   <th className="px-4 py-3">Последняя проверка</th>
                   <th className="px-4 py-3">Следующая</th>
+                  {canManage ? <th className="px-4 py-3 text-right">Действия</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -135,6 +137,18 @@ export default async function ShipmentsPage() {
                     <td className="text-muted-foreground px-4 py-3">
                       {shipment.trackingEnabled ? timeAgo(shipment.nextCheckAt) : 'Завершено'}
                     </td>
+                    {canManage ? (
+                      <td className="px-4 py-3">
+                        <ShipmentActions
+                          shipmentId={shipment.id}
+                          trackingNumber={shipment.trackingNumber}
+                          trackingEnabled={shipment.trackingEnabled}
+                          isDelivered={shipment.currentStatus === 'delivered'}
+                          canDelete={ctx.role === 'owner'}
+                          compact
+                        />
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
